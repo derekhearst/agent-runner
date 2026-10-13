@@ -19,3 +19,19 @@ services:
     security_opt: ["no-new-privileges:true"]
     pids_limit: 2048
     mem_limit: ${WORKER_MEM_LIMIT}
+
+  # Separate container so the API key below is never in the worker the agent runs commands in.
+  dispatcher:
+    image: ghcr.io/derekhearst/agent-runner-worker:latest
+    pull_policy: always
+    restart: unless-stopped
+    entrypoint: ["/opt/venv/bin/python", "-u", "/opt/dispatch.py"]
+    environment:
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      GH_TOKEN: "${GH_TOKEN}"
+      AGENT_ID: "agent_0174fxsaSGLdcmwxcNkaBb14"
+      ENVIRONMENT_ID: "${ANTHROPIC_ENVIRONMENT_ID}"
+      BUDGET_USD: "${BUDGET_USD}"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m

@@ -8,16 +8,24 @@ the agent's tools (bash, files, git, Godot) run in a container on TrueNAS.
 
 ```
 issue gets label "agent"
-  -> GitHub Action mints an OIDC token (audience https://api.anthropic.com)
-  -> Anthropic exchanges it for a short-lived key (federation rule -> service account)
-  -> Action creates a session with a hard budget and the message "Work issue #N in owner/repo"
-  -> worker on TrueNAS (outbound polling, no open ports) picks up the work
+  -> dispatcher container on TrueNAS (polls GitHub every 60 s) sees it
+  -> swaps the label to "agent: started", creates a session with a hard budget, comments the link
+  -> worker container on TrueNAS (outbound polling, no open ports) picks up the work
   -> agent clones the repo, follows its CLAUDE.md / CONTRIBUTING.md, tests, pushes a branch,
      opens a PR, comments on the issue
 ```
 
-No API key is stored in GitHub. The only long-lived secrets are the worker's environment key and
-GitHub token, both on the TrueNAS box.
+Everything runs on the TrueNAS box, so no GitHub Actions minutes are used (RigForSilent's own CI
+had exhausted the account's Actions budget, which blocked the original Actions trigger).
+
+The dispatcher and worker are separate containers on purpose: the dispatcher holds an Anthropic API
+key, and the agent's shell commands run in the worker, which never sees it. The worker holds the
+environment key and GitHub token. If starting a session fails the issue is labelled `agent: failed`;
+add `agent` again to retry.
+
+> **Superseded:** `github/agent.yml` (an Actions trigger using workload identity federation) still
+> works if the Actions budget allows it, but run only one trigger at a time or an issue starts twice.
+> The RigForSilent copy is disabled.
 
 ## Layout
 
@@ -27,7 +35,8 @@ GitHub token, both on the TrueNAS box.
 | `environments/truenas.yaml` | The self-hosted environment definition |
 | `worker/` | Dockerfile, compose file and entrypoint for the TrueNAS worker |
 | `deploy/` | Script and compose template that install the worker as a TrueNAS custom app |
-| `github/agent.yml`, `github/start-session.ts` | Copy into a repo as `.github/workflows/agent.yml` and `.github/agent/start-session.ts` |
+| `worker/dispatch.py` | The dispatcher (runs in its own container from the same image) |
+| `github/` | The older Actions-based trigger, kept for reference |
 
 Already installed in `RigForSilent` (merged).
 
@@ -48,10 +57,11 @@ into RigForSilent (PR 141).
    Log in under the **same workspace** the service account uses (Default), or the agent will not
    be visible to the Action.
 2. **Environment key.** Console > Environments > `truenas-worker` > Generate environment key.
-3. **GitHub token.** A fine-grained PAT for only the repos the agent may touch. Repository
+3. **Anthropic API key** for the dispatcher: Console > API keys > Create key, Default workspace.
+4. **GitHub token.** A fine-grained PAT for only the repos the agent may touch. Repository
    permissions: Contents RW, Issues RW, Pull requests RW, Metadata R. Do not give it admin or
    workflow permissions.
-4. **Start the worker on TrueNAS.** The box has no usable `docker` CLI (sudo needs a password), so
+5. **Start the app on TrueNAS.** The box has no usable `docker` CLI (sudo needs a password), so
    it runs as a custom app that pulls `ghcr.io/derekhearst/agent-runner-worker`, built by
    `.github/workflows/image.yml` on every push to `worker/`. Then:
    ```bash
@@ -61,10 +71,10 @@ into RigForSilent (PR 141).
    ```
    Logs are in the TrueNAS UI: Apps > agent-runner > Logs. `worker/compose.yaml` is the same
    container for a machine where docker works (`docker compose up -d --build`).
-5. **Repo variables** (Settings > Secrets and variables > Actions > Variables) in each repo:
+6. **Repo variables (only for the Actions trigger)** (Settings > Secrets and variables > Actions > Variables) in each repo:
    `ANTHROPIC_AGENT_ID`, `ANTHROPIC_ENVIRONMENT_ID`, and optionally `AGENT_BUDGET_USD`
    (default 10, a hard cap per session).
-6. **Create the `agent` label** in the repo, then add it to a small issue to test.
+7. **Create the `agent` label** in the repo, then add it to a small issue to test.
 
 For another repo, copy the two GitHub files, add the repo to the PAT, and set the variables. The
 federation rule already matches every `derekhearst/*` repo.

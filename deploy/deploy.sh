@@ -18,8 +18,8 @@ while IFS='=' read -r key value; do
   value="${value%$'\r'}"; value="${value#\"}"; value="${value%\"}"
   [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]] && export "$key=$value"
 done < <(grep -v '^[[:space:]]*#' .env)
-: "${ANTHROPIC_ENVIRONMENT_KEY:?}" "${ANTHROPIC_ENVIRONMENT_ID:?}" "${GH_TOKEN:?}" "${GIT_EMAIL:?}"
-export GIT_NAME="${GIT_NAME:-Claude Agent}" WORKER_MEM_LIMIT="${WORKER_MEM_LIMIT:-8g}"
+: "${ANTHROPIC_ENVIRONMENT_KEY:?}" "${ANTHROPIC_ENVIRONMENT_ID:?}" "${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY (Console > API keys)}" "${GH_TOKEN:?}" "${GIT_EMAIL:?}"
+export GIT_NAME="${GIT_NAME:-Claude Agent}" WORKER_MEM_LIMIT="${WORKER_MEM_LIMIT:-8g}" BUDGET_USD="${BUDGET_USD:-10}"
 
 # Render the compose file and wrap it as the JSON payload midclt wants, locally, so secrets never
 # touch a file on the NAS other than the app's own config.

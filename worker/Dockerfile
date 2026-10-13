@@ -25,6 +25,10 @@ RUN curl -fsSL "https://github.com/anthropics/anthropic-cli/releases/download/v$
       | tar -xz -C /usr/local/bin ant \
     && ant --version
 
+# The dispatcher (dispatch.py) runs in its own container from this same image.
+RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir anthropic==1.13.0
+COPY --chmod=0755 dispatch.py /opt/dispatch.py
+
 RUN git lfs install --system \
     && useradd --uid "${AGENT_UID}" --create-home --shell /bin/bash agent \
     && mkdir -p /workspace /opt/rfs \
