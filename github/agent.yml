@@ -1,0 +1,57 @@
+name: Agent
+# Adding the `agent` label to an issue starts a Claude Managed Agents session that works the
+# issue on the TrueNAS worker and opens a pull request. Only people with triage access or
+# above can add a label, so that is who can start it. Setup: agent-runner/README.md.
+on:
+  issues:
+    types: [labeled]
+
+concurrency:
+  group: agent-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write # lets the job mint the GitHub OIDC token that Anthropic trusts
+
+jobs:
+  start:
+    if: github.event.label.name == 'agent'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      # Not secrets: IDs of the federation rule and service account in Console.
+      ANTHROPIC_ORGANIZATION_ID: 9e00efc2-ad60-43c5-ac99-801a9a58a250
+      ANTHROPIC_FEDERATION_RULE_ID: fdrl_01X6nDwKdrnrABHvgKjoc2K6
+      ANTHROPIC_SERVICE_ACCOUNT_ID: svac_013yo1oo7DeCYarrPcEp7YmX
+      ANTHROPIC_IDENTITY_TOKEN_FILE: ${{ runner.temp }}/anthropic-oidc-token
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/agent
+      - uses: oven-sh/setup-bun@v2
+      - name: Mint the OIDC token for Anthropic
+        run: |
+          # The audience must be Anthropic's, not GitHub's default (the repo owner's URL).
+          token=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com" | jq -r .value)
+          echo "::add-mask::$token"
+          umask 077
+          printf %s "$token" > "$ANTHROPIC_IDENTITY_TOKEN_FILE"
+      - name: Start the session
+        id: session
+        env:
+          AGENT_ID: ${{ vars.ANTHROPIC_AGENT_ID }}
+          ENVIRONMENT_ID: ${{ vars.ANTHROPIC_ENVIRONMENT_ID }}
+          BUDGET_USD: ${{ vars.AGENT_BUDGET_USD || '10' }}
+          REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: bun .github/agent/start-session.ts
+      - name: Tell the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SESSION_URL: ${{ steps.session.outputs.url }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" --body "Agent session started: $SESSION_URL"

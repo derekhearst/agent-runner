@@ -1,0 +1,38 @@
+# Self-hosted sandbox worker for Claude Managed Agents.
+# Polls Anthropic's work queue (outbound only) and runs the agent's bash and file tools here.
+# Includes what the RigForSilent toolchain needs on Linux (docs/SETUP.md): Python 3, Git LFS,
+# xvfb and software Vulkan. Godot itself is downloaded by tools/bootstrap.sh into /opt/rfs, a volume.
+FROM ubuntu:24.04
+
+ARG ANT_VERSION=1.40.0
+ARG AGENT_UID=950
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      bash ca-certificates curl git git-lfs gnupg jq unzip \
+      python3 python3-pip python3-venv \
+      xvfb mesa-vulkan-drivers espeak-ng sox libcairo2 \
+    && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+         -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+         > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update && apt-get install -y --no-install-recommends gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# The Anthropic CLI; `ant beta:worker poll` is the worker.
+RUN curl -fsSL "https://github.com/anthropics/anthropic-cli/releases/download/v${ANT_VERSION}/ant_${ANT_VERSION}_linux_amd64.tar.gz" \
+      | tar -xz -C /usr/local/bin ant \
+    && ant --version
+
+RUN git lfs install --system \
+    && useradd --uid "${AGENT_UID}" --create-home --shell /bin/bash agent \
+    && mkdir -p /workspace /opt/rfs \
+    && chown agent:agent /workspace /opt/rfs
+
+COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
+
+USER agent
+WORKDIR /workspace
+ENV RFS_TOOLS=/opt/rfs
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

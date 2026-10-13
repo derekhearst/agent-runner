@@ -1,0 +1,23 @@
+# Run on the TrueNAS box:  docker compose up -d --build
+services:
+  worker:
+    build:
+      context: .
+      args:
+        ANT_VERSION: "1.40.0"
+        AGENT_UID: "950"
+    image: agent-worker:local
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - workspace:/workspace   # clones and branches, kept between sessions
+      - rfs-tools:/opt/rfs     # Godot 4.7.2 download for RigForSilent, kept between sessions
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 2048
+    mem_limit: ${WORKER_MEM_LIMIT:-16g}
+    # No ports: the worker only makes outbound connections. No docker socket on purpose.
+
+volumes:
+  workspace:
+  rfs-tools:

@@ -1,0 +1,21 @@
+# Rendered by deploy.sh (values come from deploy/.env) and installed as the TrueNAS custom app
+# "agent-runner". Container user is uid/gid 950 = truenas_admin, so the bind mounts stay manageable
+# over SSH (sudo needs a password on this box).
+services:
+  worker:
+    image: ghcr.io/derekhearst/agent-runner-worker:latest
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      ANTHROPIC_ENVIRONMENT_KEY: "${ANTHROPIC_ENVIRONMENT_KEY}"
+      ANTHROPIC_ENVIRONMENT_ID: "${ANTHROPIC_ENVIRONMENT_ID}"
+      GH_TOKEN: "${GH_TOKEN}"
+      GIT_NAME: "${GIT_NAME}"
+      GIT_EMAIL: "${GIT_EMAIL}"
+    volumes:
+      - /mnt/Apps/Apps/AgentRunner/workspace:/workspace
+      - /mnt/Apps/Apps/AgentRunner/rfs-tools:/opt/rfs
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 2048
+    mem_limit: ${WORKER_MEM_LIMIT}
