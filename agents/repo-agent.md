@@ -52,6 +52,19 @@ The first message names a repository (`owner/name`) and an issue number. Do that
 - If the issue needs a decision only the owner can make, or you are blocked, do not guess: comment on
   the issue with what you found and the exact question, then stop.
 
+## Long jobs and a flaky connection
+
+Your sandbox connection can drop, which loses the tool call in flight. So:
+
+- **Keep every tool call under about two minutes.** Start anything longer (an import, a test suite, a
+  big download) detached with `setsid nohup ... > /workspace/runlogs/<name>.log 2>&1 &`, write its exit
+  code to a `.done` file when it ends, and poll the log with short calls.
+- **Make your state recoverable from disk:** keep notes in `/workspace/runlogs/` (what is running, what
+  has passed, what is next). If a message tells you your connection dropped, read those notes, check
+  `git status` and the logs, and continue; do not start the work over.
+- **If you cannot finish for any reason** (blocked, out of budget, a failure you cannot resolve), comment
+  on the issue first: what you did, where it stands, and what is needed. Never go quiet.
+
 ## Finish
 
 End by commenting on the issue with the pull request link (or the blocker), what you ran, and anything

@@ -18,6 +18,21 @@ issue gets label "agent"
 Everything runs on the TrueNAS box, so no GitHub Actions minutes are used (RigForSilent's own CI
 had exhausted the account's Actions budget, which blocked the original Actions trigger).
 
+**Nothing needs babysitting.** The dispatcher also supervises every session it started, and every
+outcome ends as a label and a comment on the issue:
+
+| Situation | What it does | Label |
+|---|---|---|
+| Finished | Comments the cost | `agent: done` |
+| Sandbox connection dropped (no activity 25 min while waiting on a tool) | Interrupts the session so the platform re-queues the lost work, tells the agent to carry on, comments. Up to 2 tries. | stays `agent: started` |
+| Still stuck after 2 recoveries | Comments with the session link | `agent: stuck` |
+| Hit the dollar cap | Comments | `agent: budget` |
+| Session ended with an error, or could not start | Comments | `agent: failed` |
+| Worker offline (work waiting, nobody polling, 3 min) | Comments once per issue | unchanged |
+
+Add `agent` again to start a fresh session after `stuck`, `failed` or `budget`. The agent's own
+prompt also tells it to keep tool calls short, detach long runs, and comment before it ever goes quiet.
+
 The dispatcher and worker are separate containers on purpose: the dispatcher holds an Anthropic API
 key, and the agent's shell commands run in the worker, which never sees it. The worker holds the
 environment key and GitHub token. If starting a session fails the issue is labelled `agent: failed`;
@@ -90,6 +105,10 @@ federation rule already matches every `derekhearst/*` repo.
   restricted by default; tighten it in the TrueNAS firewall if you want.
 - The agent never merges and never pushes to the default branch; you review every PR.
 - Web search and fetch are off for the agent.
+
+## Tests
+
+`cd worker && AGENT_ID=a ENVIRONMENT_ID=e python test_dispatch.py` checks the supervision rules.
 
 ## Not verified yet
 
