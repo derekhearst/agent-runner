@@ -13,7 +13,11 @@ if [[ "${1:-}" == "restart" ]]; then
   exit 0
 fi
 
-set -a; . ./.env; set +a
+# Plain KEY=VALUE lines, not sourced as shell: values may hold spaces, and a Windows editor may add CRs.
+while IFS='=' read -r key value; do
+  value="${value%$'\r'}"; value="${value#\"}"; value="${value%\"}"
+  [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]] && export "$key=$value"
+done < <(grep -v '^[[:space:]]*#' .env)
 : "${ANTHROPIC_ENVIRONMENT_KEY:?}" "${ANTHROPIC_ENVIRONMENT_ID:?}" "${GH_TOKEN:?}" "${GIT_EMAIL:?}"
 export GIT_NAME="${GIT_NAME:-Claude Agent}" WORKER_MEM_LIMIT="${WORKER_MEM_LIMIT:-8g}"
 
