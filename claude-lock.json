@@ -7,9 +7,9 @@
     "./agents/repo-agent.md": {
       "kind": "agent",
       "id": "agent_0174fxsaSGLdcmwxcNkaBb14",
-      "version": "1",
-      "hash": "963d21454891040472d4349fed58f3ba",
-      "remote_hash": "267b9521aaa7afda3eabcc6394665fe5"
+      "version": "2",
+      "hash": "3c88df121649da9a9d17088de0b8d848",
+      "remote_hash": "811457041f86d5ecc827229f83374a92"
     },
     "./environments/truenas.yaml": {
       "kind": "environment",
