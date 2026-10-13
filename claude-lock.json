@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "origin": {
+    "base_url": "https://api.anthropic.com"
+  },
+  "resources": {
+    "./agents/repo-agent.md": {
+      "kind": "agent",
+      "id": "agent_0174fxsaSGLdcmwxcNkaBb14",
+      "version": "1",
+      "hash": "963d21454891040472d4349fed58f3ba",
+      "remote_hash": "267b9521aaa7afda3eabcc6394665fe5"
+    },
+    "./environments/truenas.yaml": {
+      "kind": "environment",
+      "id": "env_01Q95V9kqbCG8PTWw4SJfjy2",
+      "hash": "2549ba0f66f3e4073b8ca753ff8ab5f5",
+      "remote_hash": "89a27bc0e16498a1848e554cf6e03231"
+    }
+  }
+}
