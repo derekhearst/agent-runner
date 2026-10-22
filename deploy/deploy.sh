@@ -21,6 +21,18 @@ done < <(grep -v '^[[:space:]]*#' .env)
 : "${ANTHROPIC_ENVIRONMENT_KEY:?}" "${ANTHROPIC_ENVIRONMENT_ID:?}" "${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY (Console > API keys)}" "${GH_TOKEN:?}" "${GIT_EMAIL:?}"
 export GIT_NAME="${GIT_NAME:-Claude Agent}" WORKER_MEM_LIMIT="${WORKER_MEM_LIMIT:-8g}" BUDGET_USD="${BUDGET_USD:-10}"
 
+# Dev box (SSH + GPU). The authorized keys are public keys, read from the files named in
+# DEVBOX_PUBKEY_FILES (space separated, default: the key used to reach the NAS) and joined with ;.
+DEVBOX_SSH_PORT="${DEVBOX_SSH_PORT:-2222}" DEVBOX_MEM_LIMIT="${DEVBOX_MEM_LIMIT:-12g}"
+if [[ -z "${SSH_AUTHORIZED_KEYS:-}" ]]; then
+  SSH_AUTHORIZED_KEYS=""
+  for f in ${DEVBOX_PUBKEY_FILES:-$HOME/.ssh/truenas_ed25519.pub}; do
+    [[ -r "$f" ]] || { echo "missing public key file: $f" >&2; exit 1; }
+    SSH_AUTHORIZED_KEYS+="$(tr -d '\r\n' < "$f");"
+  done
+fi
+export DEVBOX_SSH_PORT DEVBOX_MEM_LIMIT SSH_AUTHORIZED_KEYS
+
 # Render the compose file and wrap it as the JSON payload midclt wants, locally, so secrets never
 # touch a file on the NAS other than the app's own config.
 PAYLOAD="$(python - <<'PY'
@@ -30,7 +42,7 @@ print(json.dumps({"custom_compose_config_string": text}))
 PY
 )"
 
-"${SSH[@]}" "mkdir -p /mnt/Apps/Apps/AgentRunner/workspace /mnt/Apps/Apps/AgentRunner/rfs-tools"
+"${SSH[@]}" "mkdir -p /mnt/Apps/Apps/AgentRunner/workspace /mnt/Apps/Apps/AgentRunner/rfs-tools /mnt/Apps/Apps/AgentRunner/devhome"
 
 if "${SSH[@]}" "midclt call app.query '[[\"name\",\"=\",\"$APP\"]]' | grep -q '\"name\"'"; then
   echo "$PAYLOAD" | "${SSH[@]}" "midclt call -j app.update $APP \"\$(cat)\""

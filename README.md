@@ -48,7 +48,7 @@ add `agent` again to retry.
 |---|---|
 | `agents/repo-agent.md` | The agent: model, tools, and the system prompt (rules of engagement) |
 | `environments/truenas.yaml` | The self-hosted environment definition |
-| `worker/` | Dockerfile, compose file and entrypoint for the TrueNAS worker |
+| `worker/` | Dockerfile, compose file and entrypoints for the TrueNAS worker and the SSH dev box |
 | `deploy/` | Script and compose template that install the worker as a TrueNAS custom app |
 | `worker/dispatch.py` | The dispatcher (runs in its own container from the same image) |
 | `github/` | The older Actions-based trigger, kept for reference |
@@ -93,6 +93,29 @@ into RigForSilent (PR 141).
 
 For another repo, copy the two GitHub files, add the repo to the PAT, and set the variables. The
 federation rule already matches every `derekhearst/*` repo.
+
+## Dev box (SSH + GPU)
+
+The same app also runs a `devbox` container from the worker image, for interactive work (for example
+a Claude Desktop SSH connection) on the NAS instead of the PC. It does not run the agent and holds
+none of the agent's secrets.
+
+- **SSH:** an unprivileged `sshd` on port 2222 (`DEVBOX_SSH_PORT`), key login only, as the `agent`
+  user. There is no root and no sudo in the container, so extra system packages are added to
+  `worker/Dockerfile` and shipped by the image build. The authorized keys are public keys: the
+  `deploy.sh` run reads `~/.ssh/truenas_ed25519.pub` (override with `DEVBOX_PUBKEY_FILES`) and
+  rewrites them on every start. Connect with `ssh -p 2222 -i ~/.ssh/truenas_ed25519 agent@192.168.0.2`.
+- **Persistent home:** `/mnt/Apps/Apps/AgentRunner/devhome` is mounted as `/home/agent`, so the Claude
+  login, `gh` login, git config, shell history and `~/work` survive redeploys. Claude Code and bun are
+  installed into it on first start (see `~/.sshd/tools-install.log`) and update themselves.
+- **GPU:** the container asks the NVIDIA runtime for the NAS's GPU with compute, video and graphics
+  capabilities. The card is shared with the other apps that use it (lifelog, Plex), so the 6 GB of
+  video memory is split between them.
+- **Memory:** `DEVBOX_MEM_LIMIT` (default 12g). Godot downloaded by `tools/bootstrap.sh` goes to `/opt/rfs`,
+  shared with the worker.
+
+One-time steps after the first deploy: SSH in, run `claude auth login` (it must be the full login,
+not `claude setup-token`) and `gh auth login`.
 
 ## Cost and safety
 

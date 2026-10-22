@@ -1,4 +1,4 @@
-# Self-hosted sandbox worker for Claude Managed Agents.
+# Self-hosted sandbox worker for Claude Managed Agents, and the base of the SSH dev box.
 # Polls Anthropic's work queue (outbound only) and runs the agent's bash and file tools here.
 # Includes what the RigForSilent toolchain needs on Linux (docs/SETUP.md): Python 3, Git LFS,
 # xvfb and software Vulkan. Godot itself is downloaded by tools/bootstrap.sh into /opt/rfs, a volume.
@@ -13,6 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       bash ca-certificates curl git git-lfs gnupg jq unzip \
       python3 python3-pip python3-venv \
       xvfb mesa-vulkan-drivers espeak-ng sox libcairo2 \
+      openssh-server tmux less nano procps rsync build-essential vulkan-tools \
+    && rm -f /etc/ssh/ssh_host_* \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
          -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
@@ -35,6 +37,8 @@ RUN git lfs install --system \
     && chown agent:agent /workspace /opt/rfs
 
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
+# The devbox container (SSH + GPU) runs this image with this entrypoint instead.
+COPY --chmod=0755 devbox-entrypoint.sh /usr/local/bin/devbox-entrypoint.sh
 
 USER agent
 WORKDIR /workspace
