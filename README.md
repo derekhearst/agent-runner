@@ -110,7 +110,10 @@ none of the agent's secrets.
   installed into it on first start (see `~/.sshd/tools-install.log`) and update themselves.
 - **GPU:** the container asks the NVIDIA runtime for the NAS's GPU with compute, video and graphics
   capabilities. The card is shared with the other apps that use it (lifelog, Plex), so the 6 GB of
-  video memory is split between them.
+  video memory is split between them. CUDA and video encode work as is. Vulkan needs two things the
+  runtime does not provide: the image carries `libegl1` (the NVIDIA driver refuses to start without
+  it) and the entrypoint writes the driver's manifest into `~/.local/share/vulkan/icd.d`. Check
+  with `vulkaninfo --summary`: the RTX 2060 should be listed next to the software renderer.
 - **Memory:** `DEVBOX_MEM_LIMIT` (default 12g). Godot downloaded by `tools/bootstrap.sh` goes to `/opt/rfs`,
   shared with the worker.
 

@@ -44,6 +44,15 @@ ClientAliveCountMax 5
 Subsystem sftp /usr/lib/openssh/sftp-server
 CFG
 
+# The NVIDIA runtime injects the driver libraries but not the Vulkan manifest, so without this
+# Vulkan only sees the software renderer. The driver also needs libEGL (libegl1, installed in the image).
+if [ -e /dev/nvidia0 ]; then
+  mkdir -p "$HOME/.local/share/vulkan/icd.d"
+  cat > "$HOME/.local/share/vulkan/icd.d/nvidia_icd.json" <<'ICD'
+{"file_format_version":"1.0.0","ICD":{"library_path":"libGLX_nvidia.so.0","api_version":"1.3.289"}}
+ICD
+fi
+
 # Claude Code and bun install into the home volume the first time and update themselves after.
 # Done in the background so sshd is up straight away; a failed download is retried on the next start.
 (
