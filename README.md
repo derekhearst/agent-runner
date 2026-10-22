@@ -114,7 +114,7 @@ none of the agent's secrets.
   runtime does not provide: the image carries `libegl1` (the NVIDIA driver refuses to start without
   it) and the entrypoint writes the driver's manifest into `~/.local/share/vulkan/icd.d`. Check
   with `vulkaninfo --summary`: the RTX 2060 should be listed next to the software renderer.
-- **Memory:** `DEVBOX_MEM_LIMIT` (default 12g). Godot downloaded by `tools/bootstrap.sh` goes to `/opt/rfs`,
+- **Memory:** `DEVBOX_MEM_LIMIT` (default 24g, a cap and not a reservation). Godot downloaded by `tools/bootstrap.sh` goes to `/opt/rfs`,
   shared with the worker.
 
 One-time steps after the first deploy: SSH in, run `claude auth login` (it must be the full login,
