@@ -114,6 +114,13 @@ none of the agent's secrets.
   runtime does not provide: the image carries `libegl1` (the NVIDIA driver refuses to start without
   it) and the entrypoint writes the driver's manifest into `~/.local/share/vulkan/icd.d`. Check
   with `vulkaninfo --summary`: the RTX 2060 should be listed next to the software renderer.
+- **GPU rendering for Godot:** the entrypoint starts `Xvfb :99` and sets `DISPLAY=:99` for every
+  shell and the Remote Control session, so `tools/shot.sh` and tests render on the RTX 2060
+  rather than software Vulkan (RigForSilent's docs/SETUP.md, the box section).
+- **Slots:** `rfs-slot COMMAND...` (worker/rfs-slot.sh) shares memory between RigForSilent runs:
+  4 tokens (`RFS_SLOTS`) of about 7 GB. A whole test suite takes every free token and runs that
+  many shards (`landing` one fewer, for its lint); anything else takes one. A run waits only for
+  its first token. `~/.claude/CLAUDE.md` (written once) tells Claude sessions on the box to use it.
 - **Memory:** `DEVBOX_MEM_LIMIT` (default 24g, a cap and not a reservation). Godot downloaded by `tools/bootstrap.sh` goes to `/opt/rfs`,
   shared with the worker.
 
