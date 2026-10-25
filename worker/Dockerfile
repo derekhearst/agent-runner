@@ -40,6 +40,8 @@ RUN git lfs install --system \
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
 # The devbox container (SSH + GPU) runs this image with this entrypoint instead.
 COPY --chmod=0755 devbox-entrypoint.sh /usr/local/bin/devbox-entrypoint.sh
+# Shares the dev box's memory between RigForSilent runs (see the script).
+COPY --chmod=0755 rfs-slot.sh /usr/local/bin/rfs-slot
 
 USER agent
 WORKDIR /workspace

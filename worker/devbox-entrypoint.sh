@@ -17,6 +17,30 @@ grep -q 'HOME/.local/bin' "$HOME/.bashrc" 2>/dev/null \
 grep -q 'HOME/.local/bin' "$HOME/.profile" 2>/dev/null \
   || echo 'export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"' >> "$HOME/.profile"
 
+# A virtual display for Godot: with DISPLAY set, shots and tests render on the GPU (NVIDIA's
+# Vulkan driver) instead of software Vulkan. The socket is in the container's /tmp, so it is
+# started fresh on every boot.
+export DISPLAY=:99
+grep -q 'DISPLAY=:99' "$HOME/.profile" 2>/dev/null || echo 'export DISPLAY=:99' >> "$HOME/.profile"
+grep -q 'DISPLAY=:99' "$HOME/.bashrc" 2>/dev/null || echo 'export DISPLAY=:99' >> "$HOME/.bashrc"
+[ -e /tmp/.X11-unix/X99 ] || setsid Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp \
+  > "$HOME/.sshd/xvfb.log" 2>&1 < /dev/null &
+
+# Box rules for Claude sessions here, written once so later edits on the box are kept.
+mkdir -p "$HOME/.claude"
+[ -f "$HOME/.claude/CLAUDE.md" ] || cat > "$HOME/.claude/CLAUDE.md" <<'RULES'
+# The TrueNAS dev box
+
+- Run every heavy RigForSilent command through `rfs-slot`: `rfs-slot tools/test.sh lobby`,
+  `rfs-slot tools/shot.sh ...`, `rfs-slot tools/godot.sh --import`, `rfs-slot tools/bpy.sh ...`.
+  It shares about 28 GB between runs and sets the shard count; five heavy runs at once get
+  OOM-killed here. `rfs-slot` waits for a free slot, so never retry it in a loop.
+- Start long runs with the Bash tool's run_in_background, never `cmd &`.
+- `DISPLAY=:99` (Xvfb) is set, so Godot renders on the RTX 2060. The card is shared with
+  Plex and lifelog (6 GB VRAM). `--software` forces lavapipe if a shot comes out black.
+- Worktrees live in ~/work; one is about 20 GB, so delete a lane's worktree once it lands.
+RULES
+
 # Keys come from the app config on every start, so removing one there revokes it.
 printf '%s\n' "$SSH_AUTHORIZED_KEYS" | tr ';' '\n' | sed '/^[[:space:]]*$/d' > "$HOME/.ssh/authorized_keys"
 chmod 600 "$HOME/.ssh/authorized_keys"
