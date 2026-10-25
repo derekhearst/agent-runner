@@ -63,4 +63,22 @@ fi
     || echo "bun install failed, will retry on the next start"
 ) > "$HOME/.sshd/tools-install.log" 2>&1 &
 
+# Claude Code Remote Control in a detached tmux session named "rc", so project threads can run
+# here without anyone keeping an SSH session open. It waits for the one-time `claude auth login`
+# (the credentials file in the home volume) and is restarted if it exits.
+# Watch it with `tmux attach -t rc` (detach: Ctrl-b d); the first run may ask to trust the folder.
+# DEVBOX_REMOTE_CONTROL=0 turns it off; DEVBOX_RC_DIR is the folder it starts in.
+if [ "${DEVBOX_REMOTE_CONTROL:-1}" != "0" ]; then
+  (
+    export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
+    rc_dir="${DEVBOX_RC_DIR:-$HOME/work}"
+    until command -v claude >/dev/null && [ -s "$HOME/.claude/.credentials.json" ]; do sleep 30; done
+    while true; do
+      tmux has-session -t rc 2>/dev/null \
+        || tmux new-session -d -s rc -c "$rc_dir" "claude remote-control; sleep 30"
+      sleep 60
+    done
+  ) > "$HOME/.sshd/remote-control.log" 2>&1 &
+fi
+
 exec /usr/sbin/sshd -D -e -f "$HOME/.sshd/sshd_config"
