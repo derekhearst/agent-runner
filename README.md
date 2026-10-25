@@ -120,6 +120,12 @@ none of the agent's secrets.
 One-time steps after the first deploy: SSH in, run `claude auth login` (it must be the full login,
 not `claude setup-token`) and `gh auth login`.
 
+- **Remote Control:** once Claude is logged in, the entrypoint keeps `claude remote-control` running
+  in a detached tmux session named `rc` (started in `~/work`, or `DEVBOX_RC_DIR`), and starts it
+  again if it exits or the container restarts, so Claude project threads can run on the box. The
+  first time, `tmux attach -t rc` to answer the folder trust prompt (detach with Ctrl-b d). Log in
+  `~/.sshd/remote-control.log`; `DEVBOX_REMOTE_CONTROL=0` turns it off.
+
 ## Cost and safety
 
 - Each session has a hard dollar cap (`AGENT_BUDGET_USD`). At the cap it pauses; it is not
