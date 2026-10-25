@@ -118,10 +118,15 @@ none of the agent's secrets.
   shell and the Remote Control session, so `tools/shot.sh` and tests render on the RTX 2060
   rather than software Vulkan (RigForSilent's docs/SETUP.md, the box section).
 - **Slots:** `rfs-slot COMMAND...` (worker/rfs-slot.sh) shares memory between RigForSilent runs:
-  4 tokens (`RFS_SLOTS`) of about 7 GB. A whole test suite takes every free token and runs that
+  tokens of about 7 GB that fill the container cap after 10 GB for Claude sessions and agents
+  (`RFS_RESERVE_GB`), at most 4 (`RFS_SLOTS` overrides). A whole test suite takes every free token and runs that
   many shards (`landing` one fewer, for its lint); anything else takes one. A run waits only for
-  its first token. `~/.claude/CLAUDE.md` (written once) tells Claude sessions on the box to use it.
-- **Memory:** `DEVBOX_MEM_LIMIT` (default 24g, a cap and not a reservation). Godot downloaded by `tools/bootstrap.sh` goes to `/opt/rfs`,
+  its first token. `~/.claude/CLAUDE.md` (rewritten on every start) gives Claude sessions on the
+  box these rules.
+- **Lanes:** `rfs-lane new|done|prune|list` (worker/rfs-lane.sh) keeps one worktree per lane at
+  `~/work/rfs-LANE`, seeded with copy-on-write clones of the main checkout's Godot cache and LFS
+  files, and removes it once it is clean, pushed and in main (never before).
+- **Memory:** `DEVBOX_MEM_LIMIT` (default 40g, the box's whole budget: a cap and not a reservation). Godot downloaded by `tools/bootstrap.sh` goes to `/opt/rfs`,
   shared with the worker.
 
 One-time steps after the first deploy: SSH in, run `claude auth login` (it must be the full login,

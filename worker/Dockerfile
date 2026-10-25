@@ -11,7 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       bash ca-certificates curl git git-lfs gnupg jq unzip \
-      python3 python3-pip python3-venv \
+      python3 python3-pip python3-venv python3-pil \
       xvfb mesa-vulkan-drivers espeak-ng sox libcairo2 \
       openssh-server tmux less nano procps rsync build-essential vulkan-tools \
       libegl1 libgl1 libgles2 libopengl0 \
@@ -44,6 +44,8 @@ COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY --chmod=0755 devbox-entrypoint.sh /usr/local/bin/devbox-entrypoint.sh
 # Shares the dev box's memory between RigForSilent runs (see the script).
 COPY --chmod=0755 rfs-slot.sh /usr/local/bin/rfs-slot
+# One worktree per lane, made cheap and removed once landed (see the script).
+COPY --chmod=0755 rfs-lane.sh /usr/local/bin/rfs-lane
 
 USER agent
 WORKDIR /workspace

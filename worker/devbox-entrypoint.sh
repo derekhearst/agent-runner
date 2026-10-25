@@ -26,19 +26,36 @@ grep -q 'DISPLAY=:99' "$HOME/.bashrc" 2>/dev/null || echo 'export DISPLAY=:99' >
 [ -e /tmp/.X11-unix/X99 ] || setsid Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp \
   > "$HOME/.sshd/xvfb.log" 2>&1 < /dev/null &
 
-# Box rules for Claude sessions here, written once so later edits on the box are kept.
+# Box rules for Claude sessions here. Rewritten on every start from this image, so change them
+# in agent-runner; a session's own notes go in ~/.claude/rules/ or the project's memory.
 mkdir -p "$HOME/.claude"
-[ -f "$HOME/.claude/CLAUDE.md" ] || cat > "$HOME/.claude/CLAUDE.md" <<'RULES'
+cat > "$HOME/.claude/CLAUDE.md" <<'RULES'
 # The TrueNAS dev box
+
+(Written by agent-runner's devbox-entrypoint.sh on every start; edits here are lost.)
+
+## Memory: the box's whole budget is the container cap (40 GB)
 
 - Run every heavy RigForSilent command through `rfs-slot`: `rfs-slot tools/test.sh lobby`,
   `rfs-slot tools/shot.sh ...`, `rfs-slot tools/godot.sh --import`, `rfs-slot tools/bpy.sh ...`.
-  It shares about 28 GB between runs and sets the shard count; five heavy runs at once get
-  OOM-killed here. `rfs-slot` waits for a free slot, so never retry it in a loop.
+  It sizes its slots (about 7 GB each) from the cap, keeping 10 GB for Claude sessions, agents
+  and shells, and sets the shard count. It waits for a free slot, so never retry it in a loop.
+- Never raise RFS_SLOTS, RFS_TEST_SHARDS or the memory guard to go faster.
+- At most 3 subagents or workflow agents at once on the box; their heavy runs go through
+  `rfs-slot` like yours.
 - Start long runs with the Bash tool's run_in_background, never `cmd &`.
+
+## Worktrees: one per lane, removed once landed
+- The main checkout is ~/work/RigForSilent. Make a lane with `rfs-lane new LANE` (worktree
+  ~/work/rfs-LANE on claude/rfs-LANE; the Godot cache and LFS files are copy-on-write clones,
+  so it costs a few GB instead of ~20). Never `git worktree add` by hand.
+- When a lane's PR lands, `rfs-lane done LANE` right away. At the start and end of each session,
+  `rfs-lane prune` (removes every landed lane that is clean and pushed) and `rfs-lane list`.
+- Never delete a worktree with uncommitted or unpushed work; `rfs-lane` refuses to.
+
+## GPU
 - `DISPLAY=:99` (Xvfb) is set, so Godot renders on the RTX 2060. The card is shared with
   Plex and lifelog (6 GB VRAM). `--software` forces lavapipe if a shot comes out black.
-- Worktrees live in ~/work; one is about 20 GB, so delete a lane's worktree once it lands.
 RULES
 
 # Keys come from the app config on every start, so removing one there revokes it.
