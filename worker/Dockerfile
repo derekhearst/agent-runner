@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       xvfb mesa-vulkan-drivers espeak-ng sox libcairo2 \
       openssh-server tmux less nano procps rsync build-essential vulkan-tools \
       libegl1 libgl1 libgles2 libopengl0 \
+      libx11-6 libxcursor1 libxi6 libxinerama1 libxrandr2 libxrender1 libxext6 libxfixes3 \
+      libxxf86vm1 libxkbcommon0 libxkbcommon-x11-0 libwayland-client0 libwayland-cursor0 libraqm0 \
     && rm -f /etc/ssh/ssh_host_* \
     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
          -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
