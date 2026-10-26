@@ -31,7 +31,7 @@ RUN curl -fsSL "https://github.com/anthropics/anthropic-cli/releases/download/v$
     && ant --version
 
 # uv, which RigForSilent's tools/bootstrap.sh uses to build the bpy venv (Python 3.13) in /opt/rfs.
-ARG UV_VERSION=0.9.5
+ARG UV_VERSION=0.13.5
 RUN curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz" \
       | tar -xz --strip-components=1 -C /usr/local/bin uv-x86_64-unknown-linux-gnu/uv uv-x86_64-unknown-linux-gnu/uvx \
     && uv --version
