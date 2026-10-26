@@ -113,7 +113,9 @@ case "$cmd" in
     fi
     lfs_files "$seed"
     echo "importing the seed at $(git -C "$seed" log -1 --format='%h %s')"
-    (cd "$seed" && rfs-slot tools/godot.sh --import)
+    # A first seed import can redo ~1,000 assets, past rfs.py's 30 min default; Godot keeps what
+    # it finished, so a timed-out import resumes on the next refresh.
+    (cd "$seed" && RFS_TIMEOUT="${RFS_SEED_TIMEOUT:-120}" rfs-slot tools/godot.sh --import)
     echo "$target" > "$seed_commit"
     echo "seed ready at ${target:0:9}"
     ;;
