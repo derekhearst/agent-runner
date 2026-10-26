@@ -18,8 +18,10 @@ chmod 700 "$HOME/.ssh" "$HOME/.sshd"
 
 # The home dir is a volume, so the files useradd copied in at build time are not there on first run.
 cp -n /etc/skel/.profile /etc/skel/.bashrc /etc/skel/.bash_logout "$HOME/" 2>/dev/null || true
-grep -q 'HOME/.local/bin' "$HOME/.bashrc" 2>/dev/null \
-  || echo 'export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"' >> "$HOME/.bashrc"
+# At the top of .bashrc: Ubuntu's returns early for non-interactive shells, so a line at the end
+# never reaches `ssh box 'command'`, which then finds the image's tools instead of ~/.local/bin's.
+head -n 3 "$HOME/.bashrc" | grep -q '# rfs-path' \
+  || sed -i '1i export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH" DISPLAY=:99  # rfs-path' "$HOME/.bashrc"
 grep -q 'HOME/.local/bin' "$HOME/.profile" 2>/dev/null \
   || echo 'export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"' >> "$HOME/.profile"
 
@@ -28,7 +30,6 @@ grep -q 'HOME/.local/bin' "$HOME/.profile" 2>/dev/null \
 # started fresh on every boot.
 export DISPLAY=:99
 grep -q 'DISPLAY=:99' "$HOME/.profile" 2>/dev/null || echo 'export DISPLAY=:99' >> "$HOME/.profile"
-grep -q 'DISPLAY=:99' "$HOME/.bashrc" 2>/dev/null || echo 'export DISPLAY=:99' >> "$HOME/.bashrc"
 [ -e /tmp/.X11-unix/X99 ] || setsid Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp \
   > "$HOME/.sshd/xvfb.log" 2>&1 < /dev/null &
 
