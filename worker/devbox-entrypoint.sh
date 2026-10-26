@@ -44,7 +44,7 @@ cat > "$HOME/.claude/CLAUDE.md" <<'RULES'
 
 - Run every heavy RigForSilent command through `rfs-slot`: `rfs-slot tools/test.sh lobby`,
   `rfs-slot tools/shot.sh ...`, `rfs-slot tools/godot.sh --import`, `rfs-slot tools/bpy.sh ...`.
-  It sizes its slots (about 7 GB each) from the cap, keeping 10 GB for Claude sessions, agents
+  It sizes its slots (about 9 GB each, so 3 at 40 GB) from the cap, keeping 10 GB for Claude sessions, agents
   and shells, and sets the shard count. It waits for a free slot, so never retry it in a loop.
 - Never raise RFS_SLOTS, RFS_TEST_SHARDS or the memory guard to go faster.
 - At most 3 subagents or workflow agents at once on the box; their heavy runs go through

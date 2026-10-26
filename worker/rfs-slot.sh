@@ -1,8 +1,9 @@
 #!/bin/bash
 # rfs-slot: share the dev box's memory between RigForSilent runs. Usage: rfs-slot COMMAND [ARGS...]
-# There are RFS_SLOTS tokens of about 7 GB. By default they fill the container's memory cap
-# after RFS_RESERVE_GB (default 10) for Claude sessions, agents and shells, at most 4: four at
-# 40 GB, two at 24 GB (five at once got OOM-killed in the old ~43 GB container). A whole-suite test run (all, quick, slow, landing or a folder) takes up to
+# There are RFS_SLOTS tokens of RFS_SLOT_GB (default 9). By default they fill the container's
+# memory cap after RFS_RESERVE_GB (default 10) for Claude sessions, agents and shells, at most 4:
+# three at 40 GB. An import of a lane far behind its cache peaks at 9-10.6 GB, and four 7 GB slots
+# got the container OOM-killed at 40 GB (26 Oct). A whole-suite test run (all, quick, slow, landing or a folder) takes up to
 # all the free tokens and runs that many shards; landing keeps one for the lint and net-e2e.
 # Anything else (one test file, an import, a shot, a bpy build, a bake) takes one.
 # A run waits only for its first token and never for more. Tokens are lock files held by this
@@ -20,7 +21,7 @@ slots="${RFS_SLOTS:-}"
 if [ -z "$slots" ]; then
   cap="$(cap_gb || true)" slots=4
   if [ -n "$cap" ]; then
-    slots=$(((cap - ${RFS_RESERVE_GB:-10}) / 7))
+    slots=$(((cap - ${RFS_RESERVE_GB:-10}) / ${RFS_SLOT_GB:-9}))
     [ "$slots" -le 4 ] || slots=4
     [ "$slots" -ge 1 ] || slots=1
   fi

@@ -120,7 +120,7 @@ same user could read the worker process's environment.
   shell and the Remote Control session, so `tools/shot.sh` and tests render on the RTX 2060
   rather than software Vulkan (RigForSilent's docs/SETUP.md, the box section).
 - **Slots:** `rfs-slot COMMAND...` (worker/rfs-slot.sh) shares memory between RigForSilent runs:
-  tokens of about 7 GB that fill the container cap after 10 GB for Claude sessions and agents
+  tokens of about 9 GB (`RFS_SLOT_GB`; 3 at 40 GB) that fill the container cap after 10 GB for Claude sessions and agents
   (`RFS_RESERVE_GB`), at most 4 (`RFS_SLOTS` overrides). A whole test suite takes every free token and runs that
   many shards (`landing` one fewer, for its lint); anything else takes one. A run waits only for
   its first token. `~/.claude/CLAUDE.md` (rewritten on every start) gives Claude sessions on the
