@@ -1,6 +1,6 @@
 #!/bin/bash
 # Installs or updates the agent-runner custom app on TrueNAS.
-# Needs deploy/.env (see worker/.env.example, plus WORKER_MEM_LIMIT) and the SSH key from the
+# Needs deploy/.env (see worker/.env.example) and the SSH key from the
 # homelab notes. After the first run, a new image is picked up with: deploy.sh restart
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -19,7 +19,7 @@ while IFS='=' read -r key value; do
   [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]] && export "$key=$value"
 done < <(grep -v '^[[:space:]]*#' .env)
 : "${ANTHROPIC_ENVIRONMENT_KEY:?}" "${ANTHROPIC_ENVIRONMENT_ID:?}" "${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY (Console > API keys)}" "${GH_TOKEN:?}" "${GIT_EMAIL:?}"
-export GIT_NAME="${GIT_NAME:-Claude Agent}" WORKER_MEM_LIMIT="${WORKER_MEM_LIMIT:-8g}" BUDGET_USD="${BUDGET_USD:-10}"
+export GIT_NAME="${GIT_NAME:-Claude Agent}" BUDGET_USD="${BUDGET_USD:-10}"
 
 # Dev box (SSH + GPU). The authorized keys are public keys, read from the files named in
 # DEVBOX_PUBKEY_FILES (space separated, default: the key used to reach the NAS) and joined with ;.
@@ -42,7 +42,7 @@ print(json.dumps({"custom_compose_config_string": text}))
 PY
 )"
 
-"${SSH[@]}" "mkdir -p /mnt/Apps/Apps/AgentRunner/workspace /mnt/Apps/Apps/AgentRunner/rfs-tools /mnt/Apps/Apps/AgentRunner/devhome"
+"${SSH[@]}" "mkdir -p /mnt/Apps/Apps/AgentRunner/rfs-tools /mnt/Apps/Apps/AgentRunner/devhome/work"
 
 if "${SSH[@]}" "midclt call app.query '[[\"name\",\"=\",\"$APP\"]]' | grep -q '\"name\"'"; then
   echo "$PAYLOAD" | "${SSH[@]}" "midclt call -j app.update $APP \"\$(cat)\""

@@ -1,7 +1,8 @@
 #!/bin/bash
 # rfs-lane: one git worktree per RigForSilent lane, cheap to make and never left behind.
-#   rfs-lane new LANE [BASE]   ~/work/rfs-LANE on branch claude/rfs-LANE (the remote branch if it
-#                              exists, else a new one from BASE, default origin/main). The Godot
+#   rfs-lane new LANE [BASE] [--branch NAME]
+#                              ~/work/rfs-LANE on branch claude/rfs-LANE, or NAME (the remote branch
+#                              if it exists, else a new one from BASE, default origin/main). The Godot
 #                              cache and the LFS files are copy-on-write clones of the main
 #                              checkout's, so a new lane costs a few GB rather than ~20.
 #   rfs-lane done LANE         removes the worktree once it is clean, pushed and in main.
@@ -45,8 +46,15 @@ remove() {
 cmd="${1:-}"; shift || true
 case "$cmd" in
   new)
-    lane="${1:?usage: rfs-lane new LANE [BASE]}" base="${2:-origin/main}"
-    dir="$(lane_dir "$lane")" branch="claude/rfs-$lane"
+    lane="${1:?usage: rfs-lane new LANE [BASE] [--branch NAME]}" base="origin/main" branch="claude/rfs-$lane"
+    shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --branch) branch="${2:?--branch needs a name}"; shift 2 ;;
+        *) base="$1"; shift ;;
+      esac
+    done
+    dir="$(lane_dir "$lane")"
     [ ! -e "$dir" ] || { echo "$dir already exists" >&2; exit 1; }
     git_main fetch -q origin main
     git_main fetch -q origin "$branch" 2>/dev/null || true
@@ -89,7 +97,7 @@ case "$cmd" in
     done
     ;;
   *)
-    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac

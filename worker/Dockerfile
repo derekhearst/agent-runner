@@ -36,8 +36,8 @@ COPY --chmod=0755 dispatch.py /opt/dispatch.py
 
 RUN git lfs install --system \
     && useradd --uid "${AGENT_UID}" --create-home --shell /bin/bash agent \
-    && mkdir -p /workspace /opt/rfs \
-    && chown agent:agent /workspace /opt/rfs
+    && mkdir -p /home/agent/work /opt/rfs \
+    && chown agent:agent /home/agent/work /opt/rfs
 
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
 # The devbox container (SSH + GPU) runs this image with this entrypoint instead.
@@ -48,6 +48,6 @@ COPY --chmod=0755 rfs-slot.sh /usr/local/bin/rfs-slot
 COPY --chmod=0755 rfs-lane.sh /usr/local/bin/rfs-lane
 
 USER agent
-WORKDIR /workspace
+WORKDIR /home/agent/work
 ENV RFS_TOOLS=/opt/rfs
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

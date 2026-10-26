@@ -9,7 +9,8 @@ set -euo pipefail
 git config --global user.name "${GIT_NAME:-Claude Agent}"
 git config --global user.email "${GIT_EMAIL:-noreply@anthropic.com}"
 gh auth setup-git
+mkdir -p /home/agent/work/runlogs
 
 exec ant beta:worker poll \
   --environment-id "$ANTHROPIC_ENVIRONMENT_ID" \
-  --workdir /workspace
+  --workdir /home/agent/work

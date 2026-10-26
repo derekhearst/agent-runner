@@ -10,7 +10,7 @@ services:
     restart: unless-stopped
     env_file: .env
     volumes:
-      - workspace:/workspace   # clones and branches, kept between sessions
+      - work:/home/agent/work  # checkouts and lanes, kept between sessions (the dev box's on TrueNAS)
       - rfs-tools:/opt/rfs     # Godot 4.7.2 download for RigForSilent, kept between sessions
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
@@ -19,5 +19,5 @@ services:
     # No ports: the worker only makes outbound connections. No docker socket on purpose.
 
 volumes:
-  workspace:
+  work:
   rfs-tools:
