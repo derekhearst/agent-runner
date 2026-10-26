@@ -28,6 +28,16 @@ lfs_files() {
   git -C "$1" lfs pull >/dev/null && git -C "$1" lfs dedup >/dev/null || echo "lfs dedup skipped" >&2
 }
 
+# Files git calls modified only because the index still holds the LFS pointer's size: the
+# worktree is checked out without smudging, then `lfs pull` and `dedup` rewrite the files with
+# the same content. Re-record those (nothing gets staged: they clean to the committed blobs).
+fix_index() {
+  local dir="$1"
+  comm -23 <(git -C "$dir" ls-files -m | sort -u) <(git -C "$dir" diff --name-only | sort -u) \
+    | tr '\n' '\0' | git -C "$dir" add --renormalize --pathspec-from-file=- --pathspec-file-nul 2>/dev/null \
+    || true
+}
+
 # The warm import cache a new lane starts from: the seed's when it has been imported, else the
 # main checkout's (which matches whatever branch that checkout is on, so expect more reimports).
 # While the seed is being refreshed its cache is half-updated, so use the main checkout's then.
@@ -44,6 +54,7 @@ cache_source() {
 blocker() {
   local dir="$1" force="${2:-}" branch
   branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD)"
+  fix_index "$dir"
   [ -z "$(git -C "$dir" status --porcelain)" ] || { echo "uncommitted changes"; return; }
   git -C "$dir" rev-parse -q --verify "origin/$branch" >/dev/null || { echo "branch never pushed"; return; }
   [ "$(git -C "$dir" rev-list --count "origin/$branch..HEAD")" = 0 ] || { echo "unpushed commits"; return; }
@@ -88,6 +99,7 @@ case "$cmd" in
     git -C "$dir" branch -q --set-upstream-to="origin/$branch" 2>/dev/null || true
     # LFS files and the import cache as reflinks of what the main checkout already has.
     lfs_files "$dir"
+    fix_index "$dir"
     src="$(cache_source)"
     if [ -d "$src/game/.godot" ] && [ ! -e "$dir/game/.godot" ]; then
       echo "import cache from $src ($(git -C "$src" log -1 --format=%h))"
@@ -112,6 +124,7 @@ case "$cmd" in
       git -C "$seed" clean -q -fd -e game/.godot
     fi
     lfs_files "$seed"
+    fix_index "$seed"
     echo "importing the seed at $(git -C "$seed" log -1 --format='%h %s')"
     # A first seed import can redo ~1,000 assets, past rfs.py's 30 min default; Godot keeps what
     # it finished, so a timed-out import resumes on the next refresh.
