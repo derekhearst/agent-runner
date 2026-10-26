@@ -5,8 +5,8 @@
 # 40 GB, two at 24 GB (five at once got OOM-killed in the old ~43 GB container). A whole-suite test run (all, quick, slow, landing or a folder) takes up to
 # all the free tokens and runs that many shards; landing keeps one for the lint and net-e2e.
 # Anything else (one test file, an import, a shot, a bpy build, a bake) takes one.
-# A run waits only for its first token and never for more. Tokens are lock files, so they free
-# themselves when the run and everything it started has exited.
+# A run waits only for its first token and never for more. Tokens are lock files held by this
+# script while the command runs, so they free themselves when it ends or is killed.
 set -euo pipefail
 
 [ $# -gt 0 ] || { echo "usage: rfs-slot COMMAND [ARGS...]" >&2; exit 2; }
@@ -34,7 +34,6 @@ if [[ "$(basename "$1")" == test.sh || "$(basename "$1")" == test.cmd ]]; then
   [[ "$suite" == *.gd* || "$suite" == *::* || "$suite" == -* ]] || want="$slots"
 fi
 
-# Lock fds 20.. are inherited by the command (exec keeps them), so the tokens are held until it ends.
 held=0 waited=0
 while [ "$held" -eq 0 ]; do
   for ((i = 0; i < slots && held < want; i++)); do
@@ -55,4 +54,10 @@ if [ "$want" -gt 1 ]; then
   export RFS_TEST_SHARDS="$shards"
   echo "rfs-slot: $held of $slots slots, $shards shards" >&2
 fi
-exec "$@"
+# Run the command without the lock fds, so a daemon it leaves behind (an editor, a server, a
+# detached child) can't hold a slot after the run ends. The locks go when this script exits.
+close=""
+for ((i = 0; i < slots; i++)); do close+=" $((20 + i))>&-"; done
+set +e
+eval '"$@"'"$close"
+exit $?
