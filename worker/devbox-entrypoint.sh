@@ -58,7 +58,9 @@ cat > "$HOME/.claude/CLAUDE.md" <<'RULES'
 - When a lane's PR lands, `rfs-lane done LANE` right away. At the start and end of each session,
   `rfs-lane prune` (removes every landed lane that is clean and pushed) and `rfs-lane list`.
 - Never delete a worktree with uncommitted or unpushed work; `rfs-lane` refuses to.
-- The box also prunes landed lanes every hour (log ~/.sshd/lane-prune.log).
+- New lanes clone the import cache of ~/work/.rfs-seed (origin/main, imported). After a landing,
+  run `rfs-lane seed` (the box also does it hourly when main moves, and prunes landed lanes;
+  log ~/.sshd/lane-prune.log). Never edit or build in ~/work/.rfs-seed.
 - The `agent`-label issue worker shares ~/work and the slots: its lanes are ~/work/rfs-issue-N.
   Leave those to it unless they have landed.
 
@@ -148,12 +150,16 @@ else
   echo "no worker settings; the issue agent's worker is not started" > "$HOME/.sshd/worker.log"
 fi
 
-# Landed lanes (the dev box's and the issue agent's) are removed within the hour, even when the
-# session that made them never came back. rfs-lane keeps anything uncommitted or unpushed.
+# Every hour: re-import the lane seed if main has moved, so new lanes start warm, and remove
+# landed lanes (the dev box's and the issue agent's) even when the session that made them never
+# came back. rfs-lane keeps anything uncommitted or unpushed.
 (
   while true; do
     sleep 3600
-    [ -d "$HOME/work/RigForSilent/.git" ] && rfs-lane prune || true
+    if [ -d "$HOME/work/RigForSilent/.git" ]; then
+      rfs-lane seed --if-stale || true
+      rfs-lane prune || true
+    fi
   done
 ) > "$HOME/.sshd/lane-prune.log" 2>&1 &
 
