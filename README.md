@@ -120,8 +120,10 @@ same user could read the worker process's environment.
   shell and the Remote Control session, so `tools/shot.sh` and tests render on the RTX 2060
   rather than software Vulkan (RigForSilent's docs/SETUP.md, the box section).
 - **Slots:** `rfs-slot COMMAND...` (worker/rfs-slot.sh) shares memory between RigForSilent runs:
-  tokens of about 9 GB (`RFS_SLOT_GB`; 3 at 40 GB) that fill the container cap after 10 GB for Claude sessions and agents
-  (`RFS_RESERVE_GB`), at most 4 (`RFS_SLOTS` overrides). A whole test suite takes every free token and runs that
+  tokens of about 9 GB (`RFS_SLOT_GB`; 3 at 48 GB) that fill the container cap after 10 GB for Claude sessions and agents
+  (`RFS_RESERVE_GB`) and the render slot, at most 4 (`RFS_SLOTS` overrides). Renders (`tools/shot.sh`, or `tools/godot.sh`
+  opening a scene without `--headless`, `--import` or `--test`) also get their own token of 4 GB (`RFS_RENDER_SLOTS`,
+  `RFS_RENDER_GB`; `RFS_RENDER=1|0` overrides the check), so shots on the GPU don't queue behind imports. A whole test suite takes every free token and runs that
   many shards (`landing` one fewer, for its lint); anything else takes one. A run waits only for
   its first token. `~/.claude/CLAUDE.md` (rewritten on every start) gives Claude sessions on the
   box these rules.
@@ -132,7 +134,7 @@ same user could read the worker process's environment.
   heavy runs through the same `rfs-slot` slots. Its git and gh config are in `~/.agent-worker`, so
   your own git identity and gh login are untouched; its log is `~/.sshd/worker.log`. The dev box
   prunes landed lanes hourly (`~/.sshd/lane-prune.log`).
-- **Memory:** `DEVBOX_MEM_LIMIT` (default 40g, the box's whole budget: a cap and not a reservation). Godot downloaded by `tools/bootstrap.sh` goes to `/opt/rfs`,
+- **Memory:** `DEVBOX_MEM_LIMIT` (default 48g, the box's whole budget: a cap and not a reservation). Godot downloaded by `tools/bootstrap.sh` goes to `/opt/rfs`,
   shared with the worker.
 
 One-time steps after the first deploy: SSH in, run `claude auth login` (it must be the full login,
