@@ -23,7 +23,7 @@ export GIT_NAME="${GIT_NAME:-Claude Agent}" BUDGET_USD="${BUDGET_USD:-10}"
 
 # Dev box (SSH + GPU). The authorized keys are public keys, read from the files named in
 # DEVBOX_PUBKEY_FILES (space separated, default: the key used to reach the NAS) and joined with ;.
-DEVBOX_SSH_PORT="${DEVBOX_SSH_PORT:-2222}" DEVBOX_MEM_LIMIT="${DEVBOX_MEM_LIMIT:-40g}"
+DEVBOX_SSH_PORT="${DEVBOX_SSH_PORT:-2222}" DEVBOX_MEM_LIMIT="${DEVBOX_MEM_LIMIT:-48g}"
 if [[ -z "${SSH_AUTHORIZED_KEYS:-}" ]]; then
   SSH_AUTHORIZED_KEYS=""
   for f in ${DEVBOX_PUBKEY_FILES:-$HOME/.ssh/truenas_ed25519.pub}; do
