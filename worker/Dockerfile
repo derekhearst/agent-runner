@@ -30,14 +30,20 @@ RUN curl -fsSL "https://github.com/anthropics/anthropic-cli/releases/download/v$
       | tar -xz -C /usr/local/bin ant \
     && ant --version
 
+# uv, which RigForSilent's tools/bootstrap.sh uses to build the bpy venv (Python 3.13) in /opt/rfs.
+ARG UV_VERSION=0.13.5
+RUN curl -fsSL "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz" \
+      | tar -xz --strip-components=1 -C /usr/local/bin uv-x86_64-unknown-linux-gnu/uv uv-x86_64-unknown-linux-gnu/uvx \
+    && uv --version
+
 # The dispatcher (dispatch.py) runs in its own container from this same image.
 RUN python3 -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir anthropic==1.13.0
 COPY --chmod=0755 dispatch.py /opt/dispatch.py
 
 RUN git lfs install --system \
     && useradd --uid "${AGENT_UID}" --create-home --shell /bin/bash agent \
-    && mkdir -p /workspace /opt/rfs \
-    && chown agent:agent /workspace /opt/rfs
+    && mkdir -p /home/agent/work /opt/rfs \
+    && chown agent:agent /home/agent/work /opt/rfs
 
 COPY --chmod=0755 entrypoint.sh /usr/local/bin/entrypoint.sh
 # The devbox container (SSH + GPU) runs this image with this entrypoint instead.
@@ -48,6 +54,7 @@ COPY --chmod=0755 rfs-slot.sh /usr/local/bin/rfs-slot
 COPY --chmod=0755 rfs-lane.sh /usr/local/bin/rfs-lane
 
 USER agent
-WORKDIR /workspace
-ENV RFS_TOOLS=/opt/rfs
+WORKDIR /home/agent/work
+# RFS_TOOLS for branches cut before the prefix drop.
+ENV TMD_TOOLS=/opt/rfs RFS_TOOLS=/opt/rfs
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -10,7 +10,7 @@ the agent's tools (bash, files, git, Godot) run in a container on TrueNAS.
 issue gets label "agent"
   -> dispatcher container on TrueNAS (polls GitHub every 60 s) sees it
   -> swaps the label to "agent: started", creates a session with a hard budget, comments the link
-  -> worker container on TrueNAS (outbound polling, no open ports) picks up the work
+  -> the sandbox worker in the dev box container on TrueNAS (outbound polling) picks up the work
   -> agent clones the repo, follows its CLAUDE.md / CONTRIBUTING.md, tests, pushes a branch,
      opens a PR, comments on the issue
 ```
@@ -33,8 +33,8 @@ outcome ends as a label and a comment on the issue:
 Add `agent` again to start a fresh session after `stuck`, `failed` or `budget`. The agent's own
 prompt also tells it to keep tool calls short, detach long runs, and comment before it ever goes quiet.
 
-The dispatcher and worker are separate containers on purpose: the dispatcher holds an Anthropic API
-key, and the agent's shell commands run in the worker, which never sees it. The worker holds the
+The dispatcher and the worker are in separate containers on purpose: the dispatcher holds an Anthropic
+API key, and the agent's shell commands run with the worker, which never sees it. The worker holds the
 environment key and GitHub token. If starting a session fails the issue is labelled `agent: failed`;
 add `agent` again to retry.
 
@@ -96,9 +96,11 @@ federation rule already matches every `derekhearst/*` repo.
 
 ## Dev box (SSH + GPU)
 
-The same app also runs a `devbox` container from the worker image, for interactive work (for example
-a Claude Desktop SSH connection) on the NAS instead of the PC. It does not run the agent and holds
-none of the agent's secrets.
+The same app runs a `devbox` container from the worker image, for interactive work (SSH, Claude
+Remote Control) on the NAS instead of the PC. The issue agent's sandbox worker runs in it too, so
+everything shares one memory cap and one work folder. The worker's environment key and GitHub
+token reach only the worker process: SSH and Remote Control shells don't inherit them, though the
+same user could read the worker process's environment.
 
 - **SSH:** an unprivileged `sshd` on port 2222 (`DEVBOX_SSH_PORT`), key login only, as the `agent`
   user. There is no root and no sudo in the container, so extra system packages are added to
@@ -118,15 +120,21 @@ none of the agent's secrets.
   shell and the Remote Control session, so `tools/shot.sh` and tests render on the RTX 2060
   rather than software Vulkan (RigForSilent's docs/SETUP.md, the box section).
 - **Slots:** `rfs-slot COMMAND...` (worker/rfs-slot.sh) shares memory between RigForSilent runs:
-  tokens of about 7 GB that fill the container cap after 10 GB for Claude sessions and agents
-  (`RFS_RESERVE_GB`), at most 4 (`RFS_SLOTS` overrides). A whole test suite takes every free token and runs that
+  tokens of about 9 GB (`TMD_SLOT_GB`; 3 at 48 GB) that fill the container cap after 10 GB for Claude sessions and agents
+  (`TMD_RESERVE_GB`) and the render slot, at most 4 (`TMD_SLOTS` overrides). Renders (`tools/shot.sh`, or `tools/godot.sh`
+  opening a scene without `--headless`, `--import` or `--test`) also get their own token of 4 GB (`TMD_SLOT_RENDERS`,
+  `TMD_SLOT_RENDER_GB`; `TMD_RENDER=1|0` overrides the check), so shots on the GPU don't queue behind imports. The old `RFS_*` names still work when the `TMD_*` one is unset. A whole test suite takes every free token and runs that
   many shards (`landing` one fewer, for its lint); anything else takes one. A run waits only for
   its first token. `~/.claude/CLAUDE.md` (rewritten on every start) gives Claude sessions on the
   box these rules.
 - **Lanes:** `rfs-lane new|done|prune|list` (worker/rfs-lane.sh) keeps one worktree per lane at
   `~/work/rfs-LANE`, seeded with copy-on-write clones of the main checkout's Godot cache and LFS
   files, and removes it once it is clean, pushed and in main (never before).
-- **Memory:** `DEVBOX_MEM_LIMIT` (default 40g, the box's whole budget: a cap and not a reservation). Godot downloaded by `tools/bootstrap.sh` goes to `/opt/rfs`,
+- **The issue agent** works in `~/work` too: RigForSilent checkouts with `rfs-lane new issue-N`,
+  heavy runs through the same `rfs-slot` slots. Its git and gh config are in `~/.agent-worker`, so
+  your own git identity and gh login are untouched; its log is `~/.sshd/worker.log`. The dev box
+  prunes landed lanes hourly (`~/.sshd/lane-prune.log`).
+- **Memory:** `DEVBOX_MEM_LIMIT` (default 48g, the box's whole budget: a cap and not a reservation). Godot downloaded by `tools/bootstrap.sh` goes to `/opt/rfs`,
   shared with the worker.
 
 One-time steps after the first deploy: SSH in, run `claude auth login` (it must be the full login,
@@ -144,8 +152,9 @@ not `claude setup-token`) and `gh auth login`.
   silently overspent. List cost is tokens plus about $0.08 per session-hour.
 - Only people with triage access can add a label, so only they can start the agent. Issue text is
   treated as data by the agent, never as instructions.
-- The worker container has no root, no Linux capabilities and no Docker socket. Its blast radius is
-  the GitHub token (scoped repos only) and the container's own network access. Egress is not
+- The dev box container (and so the worker) has no root, no Linux capabilities and no Docker socket.
+  The agent's blast radius is the GitHub token (scoped repos only), the dev box's files and its
+  network access. Egress is not
   restricted by default; tighten it in the TrueNAS firewall if you want.
 - The agent never merges and never pushes to the default branch; you review every PR.
 - Web search and fetch are off for the agent.

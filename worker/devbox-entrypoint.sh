@@ -7,13 +7,21 @@ set -euo pipefail
 : "${SSH_AUTHORIZED_KEYS:?set SSH_AUTHORIZED_KEYS (public keys, separated by ;)}"
 
 export HOME=/home/agent
+
+# The issue agent's worker settings. Kept in plain variables for the worker alone and taken out
+# of the environment, so sshd, Remote Control and their shells never inherit them.
+w_key="${ANTHROPIC_ENVIRONMENT_KEY:-}" w_env="${ANTHROPIC_ENVIRONMENT_ID:-}" w_gh="${GH_TOKEN:-}"
+w_name="${GIT_NAME:-Claude Agent}" w_email="${GIT_EMAIL:-noreply@anthropic.com}"
+unset ANTHROPIC_ENVIRONMENT_KEY ANTHROPIC_ENVIRONMENT_ID GH_TOKEN GIT_NAME GIT_EMAIL
 mkdir -p "$HOME/.ssh" "$HOME/.sshd" "$HOME/work"
 chmod 700 "$HOME/.ssh" "$HOME/.sshd"
 
 # The home dir is a volume, so the files useradd copied in at build time are not there on first run.
 cp -n /etc/skel/.profile /etc/skel/.bashrc /etc/skel/.bash_logout "$HOME/" 2>/dev/null || true
-grep -q 'HOME/.local/bin' "$HOME/.bashrc" 2>/dev/null \
-  || echo 'export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"' >> "$HOME/.bashrc"
+# At the top of .bashrc: Ubuntu's returns early for non-interactive shells, so a line at the end
+# never reaches `ssh box 'command'`, which then finds the image's tools instead of ~/.local/bin's.
+head -n 3 "$HOME/.bashrc" | grep -q '# rfs-path' \
+  || sed -i '1i export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH" DISPLAY=:99  # rfs-path' "$HOME/.bashrc"
 grep -q 'HOME/.local/bin' "$HOME/.profile" 2>/dev/null \
   || echo 'export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"' >> "$HOME/.profile"
 
@@ -22,7 +30,6 @@ grep -q 'HOME/.local/bin' "$HOME/.profile" 2>/dev/null \
 # started fresh on every boot.
 export DISPLAY=:99
 grep -q 'DISPLAY=:99' "$HOME/.profile" 2>/dev/null || echo 'export DISPLAY=:99' >> "$HOME/.profile"
-grep -q 'DISPLAY=:99' "$HOME/.bashrc" 2>/dev/null || echo 'export DISPLAY=:99' >> "$HOME/.bashrc"
 [ -e /tmp/.X11-unix/X99 ] || setsid Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp \
   > "$HOME/.sshd/xvfb.log" 2>&1 < /dev/null &
 
@@ -34,13 +41,13 @@ cat > "$HOME/.claude/CLAUDE.md" <<'RULES'
 
 (Written by agent-runner's devbox-entrypoint.sh on every start; edits here are lost.)
 
-## Memory: the box's whole budget is the container cap (40 GB)
+## Memory: the box's whole budget is the container cap (48 GB)
 
 - Run every heavy RigForSilent command through `rfs-slot`: `rfs-slot tools/test.sh lobby`,
   `rfs-slot tools/shot.sh ...`, `rfs-slot tools/godot.sh --import`, `rfs-slot tools/bpy.sh ...`.
-  It sizes its slots (about 7 GB each) from the cap, keeping 10 GB for Claude sessions, agents
-  and shells, and sets the shard count. It waits for a free slot, so never retry it in a loop.
-- Never raise RFS_SLOTS, RFS_TEST_SHARDS or the memory guard to go faster.
+  It sizes its slots (about 9 GB each, so 3 at 48 GB) from the cap, keeping 10 GB for Claude sessions, agents
+  and shells, plus a 4 GB render slot for shots and windowed godot.sh scenes, and sets the shard count. It waits for a free slot, so never retry it in a loop.
+- Never raise TMD_SLOTS, TMD_TEST_SHARDS or the memory guard to go faster.
 - At most 3 subagents or workflow agents at once on the box; their heavy runs go through
   `rfs-slot` like yours.
 - Start long runs with the Bash tool's run_in_background, never `cmd &`.
@@ -52,6 +59,11 @@ cat > "$HOME/.claude/CLAUDE.md" <<'RULES'
 - When a lane's PR lands, `rfs-lane done LANE` right away. At the start and end of each session,
   `rfs-lane prune` (removes every landed lane that is clean and pushed) and `rfs-lane list`.
 - Never delete a worktree with uncommitted or unpushed work; `rfs-lane` refuses to.
+- New lanes clone the import cache of ~/work/.rfs-seed (origin/main, imported). After a landing,
+  run `rfs-lane seed` (the box also does it hourly when main moves, and prunes landed lanes;
+  log ~/.sshd/lane-prune.log). Never edit or build in ~/work/.rfs-seed.
+- The `agent`-label issue worker shares ~/work and the slots: its lanes are ~/work/rfs-issue-N.
+  Leave those to it unless they have landed.
 
 ## GPU
 - `DISPLAY=:99` (Xvfb) is set, so Godot renders on the RTX 2060. The card is shared with
@@ -121,5 +133,35 @@ if [ "${DEVBOX_REMOTE_CONTROL:-1}" != "0" ]; then
     done
   ) > "$HOME/.sshd/remote-control.log" 2>&1 &
 fi
+
+# The issue agent's sandbox worker (entrypoint.sh), restarted if it exits. Its git and gh config
+# live in ~/.agent-worker, so Derek's own git identity and gh login are left alone.
+if [ -n "$w_key" ] && [ -n "$w_env" ] && [ -n "$w_gh" ]; then
+  (
+    mkdir -p "$HOME/.agent-worker/gh"
+    while true; do
+      env ANTHROPIC_ENVIRONMENT_KEY="$w_key" ANTHROPIC_ENVIRONMENT_ID="$w_env" GH_TOKEN="$w_gh" \
+        GIT_NAME="$w_name" GIT_EMAIL="$w_email" \
+        GIT_CONFIG_GLOBAL="$HOME/.agent-worker/gitconfig" GH_CONFIG_DIR="$HOME/.agent-worker/gh" \
+        /usr/local/bin/entrypoint.sh || echo "worker exited ($?), restarting in 30 s"
+      sleep 30
+    done
+  ) > "$HOME/.sshd/worker.log" 2>&1 &
+else
+  echo "no worker settings; the issue agent's worker is not started" > "$HOME/.sshd/worker.log"
+fi
+
+# Every hour: re-import the lane seed if main has moved, so new lanes start warm, and remove
+# landed lanes (the dev box's and the issue agent's) even when the session that made them never
+# came back. rfs-lane keeps anything uncommitted or unpushed.
+(
+  while true; do
+    sleep 3600
+    if [ -d "$HOME/work/RigForSilent/.git" ]; then
+      rfs-lane seed --if-stale || true
+      rfs-lane prune || true
+    fi
+  done
+) > "$HOME/.sshd/lane-prune.log" 2>&1 &
 
 exec /usr/sbin/sshd -D -e -f "$HOME/.sshd/sshd_config"

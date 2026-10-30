@@ -2,27 +2,10 @@
 # "agent-runner". Container user is uid/gid 950 = truenas_admin, so the bind mounts stay manageable
 # over SSH (sudo needs a password on this box).
 services:
-  worker:
-    image: ghcr.io/derekhearst/agent-runner-worker:latest
-    pull_policy: always
-    restart: unless-stopped
-    environment:
-      ANTHROPIC_ENVIRONMENT_KEY: "${ANTHROPIC_ENVIRONMENT_KEY}"
-      ANTHROPIC_ENVIRONMENT_ID: "${ANTHROPIC_ENVIRONMENT_ID}"
-      GH_TOKEN: "${GH_TOKEN}"
-      GIT_NAME: "${GIT_NAME}"
-      GIT_EMAIL: "${GIT_EMAIL}"
-    volumes:
-      - /mnt/Apps/Apps/AgentRunner/workspace:/workspace
-      - /mnt/Apps/Apps/AgentRunner/rfs-tools:/opt/rfs
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-    pids_limit: 2048
-    mem_limit: ${WORKER_MEM_LIMIT}
-
-  # Interactive dev box on the same image: unprivileged sshd on 2222, Claude Code in a persistent home,
-  # and the GPU shared with lifelog and Plex through the NVIDIA runtime. No agent secrets in here, so a
-  # shell in this container cannot reach the worker's tokens.
+  # The dev box: unprivileged sshd on 2222, Claude Code in a persistent home, the GPU shared with
+  # lifelog and Plex through the NVIDIA runtime, and the issue agent's sandbox worker, all under one
+  # memory cap. The worker's tokens are not in SSH or Remote Control shells' environment, but the
+  # same user can read the worker process's, so treat a shell here as able to reach them.
   devbox:
     image: ghcr.io/derekhearst/agent-runner-worker:latest
     pull_policy: always
@@ -30,6 +13,13 @@ services:
     entrypoint: ["/usr/local/bin/devbox-entrypoint.sh"]
     environment:
       SSH_AUTHORIZED_KEYS: "${SSH_AUTHORIZED_KEYS}"
+      # The issue agent's worker runs in here too, so both share the one memory cap. The
+      # entrypoint hands these to the worker alone and drops them before sshd starts.
+      ANTHROPIC_ENVIRONMENT_KEY: "${ANTHROPIC_ENVIRONMENT_KEY}"
+      ANTHROPIC_ENVIRONMENT_ID: "${ANTHROPIC_ENVIRONMENT_ID}"
+      GH_TOKEN: "${GH_TOKEN}"
+      GIT_NAME: "${GIT_NAME}"
+      GIT_EMAIL: "${GIT_EMAIL}"
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility,video,graphics
     ports:
@@ -49,7 +39,7 @@ services:
     pids_limit: 4096
     mem_limit: ${DEVBOX_MEM_LIMIT}
 
-  # Separate container so the API key below is never in the worker the agent runs commands in.
+  # Separate container so the API key below is never where the agent runs commands.
   dispatcher:
     image: ghcr.io/derekhearst/agent-runner-worker:latest
     pull_policy: always
