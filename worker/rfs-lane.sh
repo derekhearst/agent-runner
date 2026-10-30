@@ -11,11 +11,11 @@
 #   rfs-lane done LANE         removes the worktree once it is clean, pushed and in main.
 #   rfs-lane prune             `done` for every lane; lists the ones it keeps and why.
 #   rfs-lane list              the lanes with their state.
-# RFS_MAIN is the main checkout (default ~/work/RigForSilent). `done --force` skips the in-main
+# TMD_MAIN_CHECKOUT (or the old RFS_MAIN) is the main checkout (default ~/work/RigForSilent). `done --force` skips the in-main
 # check (an abandoned lane) but never deletes uncommitted or unpushed work.
 set -euo pipefail
 
-main="${RFS_MAIN:-$HOME/work/RigForSilent}"
+main="${TMD_MAIN_CHECKOUT:-${RFS_MAIN:-$HOME/work/RigForSilent}}"
 root="$(dirname "$main")"
 git_main() { git -C "$main" "$@"; }
 
@@ -128,7 +128,7 @@ case "$cmd" in
     echo "importing the seed at $(git -C "$seed" log -1 --format='%h %s')"
     # A first seed import can redo ~1,000 assets, past rfs.py's 30 min default; Godot keeps what
     # it finished, so a timed-out import resumes on the next refresh.
-    (cd "$seed" && RFS_TIMEOUT="${RFS_SEED_TIMEOUT:-120}" rfs-slot tools/godot.sh --import)
+    (cd "$seed" && t="${TMD_SEED_TIMEOUT:-${RFS_SEED_TIMEOUT:-120}}" && TMD_TIMEOUT="$t" RFS_TIMEOUT="$t" rfs-slot tools/godot.sh --import)
     echo "$target" > "$seed_commit"
     echo "seed ready at ${target:0:9}"
     ;;

@@ -47,7 +47,7 @@ cat > "$HOME/.claude/CLAUDE.md" <<'RULES'
   `rfs-slot tools/shot.sh ...`, `rfs-slot tools/godot.sh --import`, `rfs-slot tools/bpy.sh ...`.
   It sizes its slots (about 9 GB each, so 3 at 48 GB) from the cap, keeping 10 GB for Claude sessions, agents
   and shells, plus a 4 GB render slot for shots and windowed godot.sh scenes, and sets the shard count. It waits for a free slot, so never retry it in a loop.
-- Never raise RFS_SLOTS, RFS_TEST_SHARDS or the memory guard to go faster.
+- Never raise TMD_SLOTS, TMD_TEST_SHARDS or the memory guard to go faster.
 - At most 3 subagents or workflow agents at once on the box; their heavy runs go through
   `rfs-slot` like yours.
 - Start long runs with the Bash tool's run_in_background, never `cmd &`.

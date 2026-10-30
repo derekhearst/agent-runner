@@ -59,7 +59,7 @@ The first message names a repository (`owner/name`) and an issue number. Do that
 - **Memory is shared with Derek's dev box.** Run every heavy command (a test suite or test file, an
   import, a shot, a Blender build, a bake) through `rfs-slot`, for example
   `rfs-slot tools/test.sh lobby`. It waits for a free slot and sets the shard count; never raise
-  `RFS_SLOTS` or `RFS_TEST_SHARDS` yourself.
+  `TMD_SLOTS` or `TMD_TEST_SHARDS` yourself.
 - Leave the worktree in place when you finish: it is removed automatically once your PR has landed.
 - If the issue needs a decision only the owner can make, or you are blocked, do not guess: comment on
   the issue with what you found and the exact question, then stop.

@@ -55,5 +55,6 @@ COPY --chmod=0755 rfs-lane.sh /usr/local/bin/rfs-lane
 
 USER agent
 WORKDIR /home/agent/work
-ENV RFS_TOOLS=/opt/rfs
+# RFS_TOOLS for branches cut before the prefix drop.
+ENV TMD_TOOLS=/opt/rfs RFS_TOOLS=/opt/rfs
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
