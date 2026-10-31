@@ -140,6 +140,7 @@ same user could read the worker process's environment.
 One-time steps after the first deploy: SSH in, run `claude auth login` (it must be the full login,
 not `claude setup-token`) and `gh auth login`.
 
+- **GitHub Actions runners:** the entrypoint starts every configured `~/actions-runner-NAME/` (a folder with a `.runner` file and a `start.sh`) in its own tmux session, so CI survives a restart of the container or the NAS. The `mealplan` repo's runner is `~/actions-runner-mealplan` (labels `self-hosted`, `devbox`); a runner belongs to one repo, so another repo needs its own folder, made by unpacking `actions/runner`, running `config.sh --url REPO --token TOKEN --labels devbox`, and copying `start.sh`. Log in `~/.sshd/runners.log`; `DEVBOX_RUNNERS=0` turns it off. Runner jobs run as the same user as the worker, so only point trusted workflows at them.
 - **Remote Control:** once Claude is logged in, the entrypoint keeps `claude remote-control` running
   in a detached tmux session named `rc` (started in `~/work`, or `DEVBOX_RC_DIR`), and starts it
   again if it exits or the container restarts, so Claude project threads can run on the box. The
