@@ -134,22 +134,6 @@ if [ "${DEVBOX_REMOTE_CONTROL:-1}" != "0" ]; then
   ) > "$HOME/.sshd/remote-control.log" 2>&1 &
 fi
 
-# Self-hosted GitHub Actions runners, so CI keeps running after the container or the NAS restarts.
-# Every ~/actions-runner-NAME/ that has been configured (it holds a .runner file) and has a
-# start.sh is started by that script, which puts the runner in its own detached tmux session.
-# To add one: unpack actions/runner into ~/actions-runner-NAME, run config.sh, and copy start.sh
-# from another runner folder. Nothing here changes. DEVBOX_RUNNERS=0 turns this off.
-# This runs after the worker's secrets were taken out of the environment, so no runner has them.
-if [ "${DEVBOX_RUNNERS:-1}" != "0" ]; then
-  (
-    for d in "$HOME"/actions-runner-*/; do
-      if [ -f "$d.runner" ] && [ -x "$d/start.sh" ]; then
-        "$d/start.sh" || echo "runner $d did not start"
-      fi
-    done
-  ) > "$HOME/.sshd/runners.log" 2>&1 &
-fi
-
 # The issue agent's sandbox worker (entrypoint.sh), restarted if it exits. Its git and gh config
 # live in ~/.agent-worker, so Derek's own git identity and gh login are left alone.
 if [ -n "$w_key" ] && [ -n "$w_env" ] && [ -n "$w_gh" ]; then
