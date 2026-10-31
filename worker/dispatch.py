@@ -257,6 +257,7 @@ def usage_snapshot(sessions: list, source: str, tz) -> dict:
 	day_tokens: dict[tuple[str, str], int] = {}
 	models: dict[str, dict] = {}
 	projects: dict[tuple[str, str], dict] = {}
+	runs: list[dict] = []
 	first = None
 	for session in sessions:
 		usage = getattr(session, "usage", None)
@@ -278,6 +279,15 @@ def usage_snapshot(sessions: list, source: str, tz) -> dict:
 		for bucket in (models.setdefault(model, dict.fromkeys(row, 0)), projects.setdefault((repo, model), dict.fromkeys(row, 0))):
 			for key, value in row.items():
 				bucket[key] += value
+		issue = (session.metadata or {}).get("issue", "")
+		runs.append({
+			"id": session.id,
+			"start": session.created_at.isoformat(),
+			"end": getattr(session, "updated_at", session.created_at).isoformat(),
+			"title": f"{repo}#{issue}" if issue else (getattr(session, "title", "") or repo),
+			"folder": repo,
+			"usage": {model: [row["input"], row["output"], row["cacheRead"], row["cacheCreate"]]},
+		})
 	return {
 		"source": source,
 		"firstSession": first.isoformat() if first else None,
@@ -285,6 +295,7 @@ def usage_snapshot(sessions: list, source: str, tz) -> dict:
 		"dailyModelTokens": [{"date": d, "model": m, "tokens": t} for (d, m), t in day_tokens.items() if t > 0],
 		"modelUsage": [{"model": m, **u} for m, u in models.items()],
 		"projectUsage": [{"project": p, "model": m, **u} for (p, m), u in projects.items()],
+		"sessions": runs,
 	}
 
 

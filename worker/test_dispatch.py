@@ -38,6 +38,7 @@ from types import SimpleNamespace as NS  # noqa: E402
 
 def session(created: str, repo: str, inp: int, out: int, read: int, five: int) -> NS:
 	return NS(
+		id="sesn_" + created[11:13] + repo[-1],
 		created_at=datetime.fromisoformat(created),
 		metadata={"repo": repo, "issue": "1"},
 		agent=NS(model=NS(id="claude-opus-5-5")),
@@ -54,4 +55,6 @@ check("one day", str(snap["daily"]), str([{"date": "2026-10-13", "messages": 0, 
 check("model totals", str(snap["modelUsage"]), str([{"model": "claude-opus-5-5", "input": 11, "output": 22, "cacheRead": 3_000_000_003, "cacheCreate": 9}]))
 check("per repo", str(len(snap["projectUsage"])), "2")
 check("day tokens are input + output", str(snap["dailyModelTokens"][0]["tokens"]), "33")
+check("one session row per run, titled repo#issue", snap["sessions"][0]["title"] + " " + str(len(snap["sessions"])), "o/a#1 2")
+check("session usage per model", str(snap["sessions"][1]["usage"]), str({"claude-opus-5-5": [1, 2, 3, 4]}))
 print("all passed")
