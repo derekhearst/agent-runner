@@ -51,6 +51,8 @@ services:
       AGENT_ID: "agent_0174fxsaSGLdcmwxcNkaBb14"
       ENVIRONMENT_ID: "${ANTHROPIC_ENVIRONMENT_ID}"
       BUDGET_USD: "${BUDGET_USD}"
+      # Hourly usage report to the usage dashboard (source "agent-runner"); off while empty.
+      CLAUDE_STATS_TOKEN: "${CLAUDE_STATS_TOKEN}"
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: 256m

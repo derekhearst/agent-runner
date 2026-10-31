@@ -20,6 +20,8 @@ while IFS='=' read -r key value; do
 done < <(grep -v '^[[:space:]]*#' .env)
 : "${ANTHROPIC_ENVIRONMENT_KEY:?}" "${ANTHROPIC_ENVIRONMENT_ID:?}" "${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY (Console > API keys)}" "${GH_TOKEN:?}" "${GIT_EMAIL:?}"
 export GIT_NAME="${GIT_NAME:-Claude Agent}" BUDGET_USD="${BUDGET_USD:-10}"
+# Optional: the usage dashboard's INGEST_TOKEN (tools/claude-stats). Empty = the dispatcher sends no usage.
+export CLAUDE_STATS_TOKEN="${CLAUDE_STATS_TOKEN:-}"
 
 # Dev box (SSH + GPU). The authorized keys are public keys, read from the files named in
 # DEVBOX_PUBKEY_FILES (space separated, default: the key used to reach the NAS) and joined with ;.

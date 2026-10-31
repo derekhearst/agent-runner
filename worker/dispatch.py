@@ -21,6 +21,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.request
 from datetime import datetime, timezone
 
 import anthropic
@@ -231,6 +232,83 @@ def check_worker(client: anthropic.Anthropic, active: list[tuple[str, int]]) -> 
 				comment(repo, number, "The TrueNAS worker is offline (work is waiting and nothing is polling). The agent will carry on by itself when the worker is back.")
 
 
+# --- usage report -----------------------------------------------------------------------------
+# Every STATS_EVERY_SECONDS, sends the token usage of all this agent's sessions to the Claude usage
+# dashboard (tools/claude-stats) as its own source. Each push replaces that source's data, so a
+# missed or repeated push is harmless. Off unless CLAUDE_STATS_TOKEN is set.
+
+STATS_URL = os.environ.get("CLAUDE_STATS_URL", "https://usage.derekhearst.com").rstrip("/")
+STATS_TOKEN = os.environ.get("CLAUDE_STATS_TOKEN", "")
+STATS_SOURCE = os.environ.get("CLAUDE_STATS_SOURCE", "agent-runner")
+STATS_EVERY_SECONDS = int(os.environ.get("CLAUDE_STATS_EVERY_SECONDS", "3600"))
+last_stats_push = 0.0
+
+
+def _num(obj: object, name: str) -> int:
+	value = obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+	return int(value or 0)
+
+
+def usage_snapshot(sessions: list, source: str, tz) -> dict:
+	"""A dashboard snapshot from sessions (the shape tools/claude-stats/collector sends). Pure, so it is tested.
+
+	Sessions only report cumulative usage, so a session's tokens all land on the day it was created."""
+	daily: dict[str, dict] = {}
+	day_tokens: dict[tuple[str, str], int] = {}
+	models: dict[str, dict] = {}
+	projects: dict[tuple[str, str], dict] = {}
+	first = None
+	for session in sessions:
+		usage = getattr(session, "usage", None)
+		if usage is None:
+			continue
+		model = getattr(getattr(session.agent, "model", None), "id", None) or "unknown"
+		repo = (session.metadata or {}).get("repo", "") or "(no repo)"
+		cache = getattr(usage, "cache_creation", None)
+		row = {
+			"input": _num(usage, "input_tokens"),
+			"output": _num(usage, "output_tokens"),
+			"cacheRead": _num(usage, "cache_read_input_tokens"),
+			"cacheCreate": _num(cache, "ephemeral_5m_input_tokens") + _num(cache, "ephemeral_1h_input_tokens"),
+		}
+		date = session.created_at.astimezone(tz).date().isoformat()
+		first = min(first, session.created_at) if first else session.created_at
+		daily.setdefault(date, {"date": date, "messages": 0, "sessions": 0, "tool_calls": 0})["sessions"] += 1
+		day_tokens[(date, model)] = day_tokens.get((date, model), 0) + row["input"] + row["output"]
+		for bucket in (models.setdefault(model, dict.fromkeys(row, 0)), projects.setdefault((repo, model), dict.fromkeys(row, 0))):
+			for key, value in row.items():
+				bucket[key] += value
+	return {
+		"source": source,
+		"firstSession": first.isoformat() if first else None,
+		"daily": list(daily.values()),
+		"dailyModelTokens": [{"date": d, "model": m, "tokens": t} for (d, m), t in day_tokens.items() if t > 0],
+		"modelUsage": [{"model": m, **u} for m, u in models.items()],
+		"projectUsage": [{"project": p, "model": m, **u} for (p, m), u in projects.items()],
+	}
+
+
+def push_usage(client: anthropic.Anthropic) -> None:
+	global last_stats_push
+	if not STATS_TOKEN or time.time() - last_stats_push < STATS_EVERY_SECONDS:
+		return
+	last_stats_push = time.time()  # also on failure, so an outage costs one try per interval
+	try:
+		from zoneinfo import ZoneInfo
+		tz = ZoneInfo(os.environ.get("CLAUDE_STATS_TZ", "America/Boise"))
+	except Exception:  # noqa: BLE001 - no tz database in the image: fall back to UTC days
+		tz = timezone.utc
+	sessions = list(client.beta.sessions.list(agent_id=AGENT_ID, limit=100))  # iterating auto-paginates
+	body = json.dumps(usage_snapshot(sessions, STATS_SOURCE, tz)).encode()
+	request = urllib.request.Request(
+		STATS_URL + "/ingest", data=body, method="POST",
+		# Cloudflare tends to refuse Python's default user agent, so name ours.
+		headers={"content-type": "application/json", "authorization": "Bearer " + STATS_TOKEN, "user-agent": "agent-runner-dispatcher"},
+	)
+	with urllib.request.urlopen(request, timeout=30) as response:
+		log(f"usage pushed to {STATS_URL}: {len(sessions)} sessions -> {response.read().decode()[:120]}")
+
+
 def main() -> None:
 	client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
 	once = "--once" in sys.argv
@@ -245,6 +323,10 @@ def main() -> None:
 			supervise(client)
 		except Exception as error:  # noqa: BLE001
 			log(f"supervise failed: {error}")
+		try:
+			push_usage(client)
+		except Exception as error:  # noqa: BLE001 - the dashboard is a nicety; never stop the loop for it
+			log(f"usage push failed: {error}")
 		if once:
 			return
 		time.sleep(POLL_SECONDS)

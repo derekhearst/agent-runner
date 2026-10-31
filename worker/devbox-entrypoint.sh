@@ -164,4 +164,21 @@ fi
   done
 ) > "$HOME/.sshd/lane-prune.log" 2>&1 &
 
+# Once a day (and at each start): report this box's Claude Code usage to the usage dashboard
+# (github.com/derekhearst/claude-stats) as source "devbox". It needs ~/claude-stats/collector.config.json,
+# which holds the ingest token and so lives in the home volume, not the image. The latest collector
+# is fetched each run so it keeps matching the dashboard. Log: ~/.sshd/claude-stats.log.
+(
+  export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH" TZ="${DEVBOX_TZ:-America/Boise}"
+  dir="$HOME/claude-stats"
+  while true; do
+    if [ -s "$dir/collector.config.json" ] && command -v bun >/dev/null; then
+      curl -fsSL https://raw.githubusercontent.com/derekhearst/claude-stats/main/collector/collect.mjs \
+        -o "$dir/collect.mjs.new" && mv "$dir/collect.mjs.new" "$dir/collect.mjs"
+      bun "$dir/collect.mjs" || echo "$(date -Is) collector run failed"
+    fi
+    sleep 86400
+  done
+) >> "$HOME/.sshd/claude-stats.log" 2>&1 &
+
 exec /usr/sbin/sshd -D -e -f "$HOME/.sshd/sshd_config"

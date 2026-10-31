@@ -146,6 +146,19 @@ not `claude setup-token`) and `gh auth login`.
   first time, `tmux attach -t rc` to answer the folder trust prompt (detach with Ctrl-b d). Log in
   `~/.sshd/remote-control.log`; `DEVBOX_REMOTE_CONTROL=0` turns it off.
 
+## Usage dashboard
+
+Both halves report to the Claude usage dashboard ([claude-stats](https://github.com/derekhearst/claude-stats))
+as their own sources:
+
+- **`agent-runner`**: the dispatcher sends the token usage of every session of this agent each hour,
+  once `CLAUDE_STATS_TOKEN` (the dashboard's ingest token) is in `deploy/.env`. A session's tokens
+  count on the day it started; the dashboard prices tokens only, so its figure is a little under the
+  Console's list cost (which adds session-hours).
+- **`devbox`**: the dev box runs the claude-stats collector over its own Claude Code history at each
+  start and then daily, if `~/claude-stats/collector.config.json` exists in the home volume
+  (`{"source": "devbox", "url": "...", "token": "..."}`). Log in `~/.sshd/claude-stats.log`.
+
 ## Cost and safety
 
 - Each session has a hard dollar cap (`AGENT_BUDGET_USD`). At the cap it pauses; it is not
@@ -161,7 +174,8 @@ not `claude setup-token`) and `gh auth login`.
 
 ## Tests
 
-`cd worker && AGENT_ID=a ENVIRONMENT_ID=e python test_dispatch.py` checks the supervision rules.
+`cd worker && AGENT_ID=a ENVIRONMENT_ID=e python test_dispatch.py` checks the supervision rules
+and the usage snapshot.
 
 ## Not verified yet
 
