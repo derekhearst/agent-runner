@@ -110,6 +110,10 @@ same user could read the worker process's environment.
 - **Persistent home:** `/mnt/Apps/Apps/AgentRunner/devhome` is mounted as `/home/agent`, so the Claude
   login, `gh` login, git config, shell history and `~/work` survive redeploys. Claude Code and bun are
   installed into it on first start (see `~/.sshd/tools-install.log`) and update themselves.
+- **Media (read-only):** the NAS's `/mnt/Poseidon/Media` is mounted at `/mnt/media`, read-only, so
+  agents can browse the sound library (`/mnt/media/Audio/sonniss`) and copy what they need into a
+  lane without being able to change or delete the originals. The container runs as uid 950, so the
+  dataset must be readable by `truenas_admin`.
 - **GPU:** the container asks the NVIDIA runtime for the NAS's GPU with compute, video and graphics
   capabilities. The card is shared with the other apps that use it (lifelog, Plex), so the 6 GB of
   video memory is split between them. CUDA and video encode work as is. Vulkan needs two things the

@@ -27,6 +27,9 @@ services:
     volumes:
       - /mnt/Apps/Apps/AgentRunner/devhome:/home/agent
       - /mnt/Apps/Apps/AgentRunner/rfs-tools:/opt/rfs
+      # Derek's media library (Sonniss sfx under Audio/sonniss), read-only so agents can browse and
+      # copy from it but never change it.
+      - /mnt/Poseidon/Media:/mnt/media:ro
     deploy:
       resources:
         reservations:
