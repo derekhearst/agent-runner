@@ -46,7 +46,12 @@ cat > "$HOME/.claude/CLAUDE.md" <<'RULES'
 - Run every heavy RigForSilent command through `rfs-slot`: `rfs-slot tools/test.sh lobby`,
   `rfs-slot tools/shot.sh ...`, `rfs-slot tools/godot.sh --import`, `rfs-slot tools/bpy.sh ...`.
   It sizes its slots (about 9 GB each, so 3 at 48 GB) from the cap, keeping 10 GB for Claude sessions, agents
-  and shells, plus a 4 GB render slot for shots and windowed godot.sh scenes, and sets the shard count. It waits for a free slot, so never retry it in a loop.
+  and shells, plus a 4 GB render slot for shots and windowed godot.sh scenes, and sets the shard count.
+  GPU jobs (bake.sh, bpy.sh) take only the render slot, one at a time. Runs queue first come first
+  served; never retry it in a loop. A run still queued after 60 min gives up with exit 75 and
+  "still queued" having run nothing: run it again later. `rfs-slot --status` shows who holds the
+  slots and the queue. Don't wrap a chain (import && test && shot) in one rfs-slot: it holds the
+  slot throughout; give each step its own.
 - Never raise TMD_SLOTS, TMD_TEST_SHARDS or the memory guard to go faster.
 - At most 3 subagents or workflow agents at once on the box; their heavy runs go through
   `rfs-slot` like yours.
@@ -59,7 +64,9 @@ cat > "$HOME/.claude/CLAUDE.md" <<'RULES'
 - When a lane's PR lands, `rfs-lane done LANE` right away. At the start and end of each session,
   `rfs-lane prune` (removes every landed lane that is clean and pushed) and `rfs-lane list`.
 - Never delete a worktree with uncommitted or unpushed work; `rfs-lane` refuses to.
-- New lanes clone the import cache of ~/work/.rfs-seed (origin/main, imported). After a landing,
+- New lanes clone the last published seed cache (~/work/.rfs-seed-caches/current: origin/main,
+  imported), even while a refresh runs; a lane that prints "no seed cache yet" will do a full
+  import, so tell the owner rather than starting another lane. After a landing,
   run `rfs-lane seed` (the box also does it hourly when main moves, and prunes landed lanes;
   log ~/.sshd/lane-prune.log). Never edit or build in ~/work/.rfs-seed.
 - The `agent`-label issue worker shares ~/work and the slots: its lanes are ~/work/rfs-issue-N.
