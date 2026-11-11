@@ -6,14 +6,20 @@
 #                              cache and the LFS files are copy-on-write clones of the main
 #                              checkout's, so a new lane costs a few GB rather than ~20.
 #   rfs-lane seed [--if-stale] keeps ~/work/.rfs-seed, a checkout of origin/main with its Godot
-#                              import done, for `new` to clone. Run it after a landing (the dev box
-#                              does it hourly when main has moved).
+#                              import done, and publishes its cache for `new` to clone. Run it after
+#                              a landing (the dev box does it hourly when main has moved). Its import
+#                              queues ahead of other runs (rfs-slot --first).
 #   rfs-lane done LANE         removes the worktree once it is clean, pushed and in main.
 #   rfs-lane prune             `done` for every lane; lists the ones it keeps and why.
 #   rfs-lane list              the lanes with their state.
+# New lanes only ever clone a published seed cache (~/work/.rfs-seed-caches/current): the last
+# seed import that finished. A refresh imports in ~/work/.rfs-seed and publishes a copy-on-write
+# copy only when it ends, so lanes made meanwhile still get the last good cache. Until 11 Nov a
+# lane made mid-refresh got the main checkout's weeks-old cache and reimported ~3,500 assets.
 # TMD_MAIN_CHECKOUT (or the old RFS_MAIN) is the main checkout (default ~/work/RigForSilent). `done --force` skips the in-main
 # check (an abandoned lane) but never deletes uncommitted or unpushed work.
 set -euo pipefail
+# TMD_REFLINK=auto lets the copies below fall back to plain copies (tests on filesystems without reflinks).
 
 main="${TMD_MAIN_CHECKOUT:-${RFS_MAIN:-$HOME/work/RigForSilent}}"
 root="$(dirname "$main")"
@@ -22,6 +28,7 @@ git_main() { git -C "$main" "$@"; }
 lane_dir() { echo "$root/rfs-$1"; }
 seed="$root/.rfs-seed"
 seed_commit="$root/.rfs-seed.commit"
+caches="$root/.rfs-seed-caches"  # published seed caches: <time>-<commit>/.godot, `current` -> the newest
 
 # LFS files as reflinks of the objects the repo already has (downloading what's missing).
 lfs_files() {
@@ -38,16 +45,52 @@ fix_index() {
     || true
 }
 
-# The warm import cache a new lane starts from: the seed's when it has been imported, else the
-# main checkout's (which matches whatever branch that checkout is on, so expect more reimports).
-# While the seed is being refreshed its cache is half-updated, so use the main checkout's then.
-cache_source() {
-  if [ -s "$seed_commit" ] && [ -d "$seed/game/.godot" ] \
-    && (exec 9>"$root/.rfs-seed.lock" && flock -n 9); then
-    echo "$seed"
-  else
-    echo "$main"
+# The folder of the newest published seed cache (holding .godot and commit), or nothing.
+published() {
+  local d
+  d="$(readlink -f "$caches/current" 2>/dev/null || true)"
+  [ -n "$d" ] && [ -d "$d/.godot" ] && [ -s "$d/commit" ] && echo "$d"
+}
+
+# Publishes the seed's finished import: a copy-on-write copy under $caches, then `current` is
+# switched to it in one rename, so a lane copying the old one is never cut short. Old copies are
+# removed once no lane is copying (they hold $caches/.lock shared while they copy).
+publish() {
+  local commit="$1" new old
+  mkdir -p "$caches"
+  new="$caches/$(date +%Y%m%d-%H%M%S)-${commit:0:9}"
+  if ! { mkdir -p "$new.part" && cp -a --reflink="${TMD_REFLINK:-always}" "$seed/game/.godot" "$new.part/.godot"; }; then
+    rm -rf "$new.part"
+    echo "rfs-lane: couldn't copy the seed's cache; lanes keep the last published one" >&2
+    return 1
   fi
+  echo "$commit" > "$new.part/commit"
+  mv "$new.part" "$new"
+  ln -sfn "$(basename "$new")" "$caches/current.new"
+  mv -T "$caches/current.new" "$caches/current"
+  (
+    flock -n -x 9 || exit 0
+    for old in "$caches"/*; do
+      [ "$old" != "$new" ] && [ "$(basename "$old")" != current ] && rm -rf "$old"
+    done
+  ) 9>"$caches/.lock"
+  echo "published the seed cache at ${commit:0:9}"
+}
+
+# The warm import cache a new lane starts from: the newest published seed cache. Never the main
+# checkout's: it matches whatever that checkout last imported (25 Oct on 11 Nov). With nothing
+# published yet (just after the change that brought publishing), a refresh that is running is
+# waited for, up to TMD_SEED_WAIT minutes (60), and then an imported seed counts.
+cache_source() {
+  local p
+  p="$(published)" && { echo "$p"; return; }
+  [ -d "$seed/game/.godot" ] || return 1
+  (
+    exec 9>"$root/.rfs-seed.lock"
+    flock -n 9 || { echo "waiting for the seed refresh to finish" >&2; flock -w $((${TMD_SEED_WAIT:-60} * 60)) 9; }
+  ) || return 1
+  p="$(published)" && { echo "$p"; return; }
+  [ -s "$seed_commit" ] && echo "$seed/game"
 }
 
 # Why a lane can't go yet (empty when it can). $2 = "force" skips the in-main check.
@@ -100,11 +143,19 @@ case "$cmd" in
     # LFS files and the import cache as reflinks of what the main checkout already has.
     lfs_files "$dir"
     fix_index "$dir"
-    src="$(cache_source)"
-    if [ -d "$src/game/.godot" ] && [ ! -e "$dir/game/.godot" ]; then
-      echo "import cache from $src ($(git -C "$src" log -1 --format=%h))"
-      cp -a --reflink=always "$src/game/.godot" "$dir/game/.godot" \
-        || { rm -rf "$dir/game/.godot"; echo "no reflink copy of game/.godot; the first import fills it" >&2; }
+    if [ ! -e "$dir/game/.godot" ]; then
+      mkdir -p "$caches"
+      (
+        flock -s 9  # keeps `seed` from removing the copy we read
+        if src="$(cache_source)"; then
+          echo "import cache from the seed at $(cut -c1-9 "$src/commit" 2>/dev/null || cut -c1-9 "$seed_commit")"
+          cp -a --reflink="${TMD_REFLINK:-always}" "$src/.godot" "$dir/game/.godot" \
+            || { rm -rf "$dir/game/.godot"; echo "no reflink copy of game/.godot; the first import fills it" >&2; }
+        else
+          echo "rfs-lane: no seed cache yet, so this lane's first import is a full one (an hour or" \
+            "more). Run \`rfs-lane seed\` first if you can wait for it." >&2
+        fi
+      ) 9>"$caches/.lock"
     fi
     echo "$dir on $branch"
     ;;
@@ -113,12 +164,17 @@ case "$cmd" in
     flock -n 9 || { echo "a seed refresh is already running" >&2; exit 0; }
     git_main fetch -q origin main
     target="$(git_main rev-parse origin/main)"
+    # A seed imported before publishing existed: publish it as it is first.
+    if ! published >/dev/null && [ -s "$seed_commit" ] && [ -d "$seed/game/.godot" ]; then
+      publish "$(cat "$seed_commit")" || true
+    fi
     if [ "${1:-}" = --if-stale ] && [ "$(cat "$seed_commit" 2>/dev/null)" = "$target" ]; then exit 0; fi
     rm -f "$seed_commit"
     if [ ! -e "$seed/.git" ]; then
       GIT_LFS_SKIP_SMUDGE=1 git_main worktree add -q --detach "$seed" "$target"
-      # Start from the main checkout's cache so the first import only redoes what differs.
-      [ ! -d "$main/game/.godot" ] || cp -a --reflink=always "$main/game/.godot" "$seed/game/.godot" || true
+      # Start from a published cache (else the main checkout's) so the import only redoes what differs.
+      from="$(published || echo "$main/game")"
+      [ ! -d "$from/.godot" ] || cp -a --reflink="${TMD_REFLINK:-always}" "$from/.godot" "$seed/game/.godot" || true
     else
       GIT_LFS_SKIP_SMUDGE=1 git -C "$seed" checkout -q --force --detach "$target"
       git -C "$seed" clean -q -fd -e game/.godot
@@ -128,8 +184,12 @@ case "$cmd" in
     echo "importing the seed at $(git -C "$seed" log -1 --format='%h %s')"
     # A first seed import can redo ~1,000 assets, past rfs.py's 30 min default; Godot keeps what
     # it finished, so a timed-out import resumes on the next refresh.
-    (cd "$seed" && t="${TMD_SEED_TIMEOUT:-${RFS_SEED_TIMEOUT:-120}}" && TMD_TIMEOUT="$t" RFS_TIMEOUT="$t" rfs-slot tools/godot.sh --import)
+    # Ahead of every other queued run (rfs-slot --first), and never giving up its place: lanes
+    # made while it waits still get the last published cache, but they drift further behind main.
+    (cd "$seed" && t="${TMD_SEED_TIMEOUT:-${RFS_SEED_TIMEOUT:-120}}" \
+      && TMD_TIMEOUT="$t" RFS_TIMEOUT="$t" TMD_SLOT_MAX_WAIT=0 rfs-slot --first tools/godot.sh --import)
     echo "$target" > "$seed_commit"
+    publish "$target" || true
     echo "seed ready at ${target:0:9}"
     ;;
   done)

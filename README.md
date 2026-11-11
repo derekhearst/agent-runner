@@ -123,17 +123,24 @@ same user could read the worker process's environment.
 - **GPU rendering for Godot:** the entrypoint starts `Xvfb :99` and sets `DISPLAY=:99` for every
   shell and the Remote Control session, so `tools/shot.sh` and tests render on the RTX 2060
   rather than software Vulkan (RigForSilent's docs/SETUP.md, the box section).
-- **Slots:** `rfs-slot COMMAND...` (worker/rfs-slot.sh) shares memory between RigForSilent runs:
-  tokens of about 9 GB (`TMD_SLOT_GB`; 3 at 48 GB) that fill the container cap after 10 GB for Claude sessions and agents
-  (`TMD_RESERVE_GB`) and the render slot, at most 4 (`TMD_SLOTS` overrides). Renders (`tools/shot.sh`, or `tools/godot.sh`
-  opening a scene without `--headless`, `--import` or `--test`) also get their own token of 4 GB (`TMD_SLOT_RENDERS`,
-  `TMD_SLOT_RENDER_GB`; `TMD_RENDER=1|0` overrides the check), so shots on the GPU don't queue behind imports. The old `RFS_*` names still work when the `TMD_*` one is unset. A whole test suite takes every free token and runs that
-  many shards (`landing` one fewer, for its lint); anything else takes one. A run waits only for
-  its first token. `~/.claude/CLAUDE.md` (rewritten on every start) gives Claude sessions on the
-  box these rules.
+- **Slots:** `rfs-slot COMMAND...` (worker/rfs-slot.sh) shares memory and the GPU between
+  RigForSilent runs: tokens of about 9 GB (`TMD_SLOT_GB`; 3 at 48 GB) that fill the container cap
+  after 10 GB for Claude sessions and agents (`TMD_RESERVE_GB`) and the render slot, at most 4
+  (`TMD_SLOTS` overrides), plus one 4 GB render token (`TMD_SLOT_RENDERS`, `TMD_SLOT_RENDER_GB`).
+  Shots and windowed scenes take the render token or any free memory token; GPU jobs
+  (`tools/bake.sh`, `tools/bpy.sh`) take only the render token, so one runs at a time, and a bake
+  imports in a memory slot first; everything else takes a memory token (`TMD_SLOT_KIND` overrides).
+  Waiters queue first come first served (`--first` jumps the queue: the seed refresh) and give up
+  with exit 75 after `TMD_SLOT_MAX_WAIT` minutes (60). `rfs-slot --status` shows who holds what and
+  the queue; `~/.rfs-slots/slot.log` has each run's wait and run time. A whole test suite takes every
+  free token and runs that many shards (`landing` one fewer, for its lint). The old `RFS_*` names
+  still work. `~/.claude/CLAUDE.md` (rewritten on every start) gives Claude sessions on the box
+  these rules. Tests: `bash worker/test_rfs_slot.sh`, `bash worker/test_rfs_lane.sh`.
 - **Lanes:** `rfs-lane new|done|prune|list` (worker/rfs-lane.sh) keeps one worktree per lane at
-  `~/work/rfs-LANE`, seeded with copy-on-write clones of the main checkout's Godot cache and LFS
-  files, and removes it once it is clean, pushed and in main (never before).
+  `~/work/rfs-LANE`, with copy-on-write clones of the LFS files and of the last published seed
+  cache (`~/work/.rfs-seed-caches/current`, never the main checkout's), and removes it once it is
+  clean, pushed and in main (never before). `rfs-lane seed` imports origin/main in
+  `~/work/.rfs-seed` and publishes the cache only when the import ends, so there is no gap.
 - **The issue agent** works in `~/work` too: RigForSilent checkouts with `rfs-lane new issue-N`,
   heavy runs through the same `rfs-slot` slots. Its git and gh config are in `~/.agent-worker`, so
   your own git identity and gh login are untouched; its log is `~/.sshd/worker.log`. The dev box
