@@ -127,6 +127,50 @@ chmod +x "$tmp/game/tools/"*.sh
 check "bake imports first" "import --import bake" "$(tr '\n' ' ' < "$tmp/out/order" | sed 's/ $//')"
 check "import as memory, bake as gpu" "memory gpu" "$(grep $'\tend\t' "$tmp/slots/slot.log" | cut -f4 | tr '\n' ' ' | sed 's/ $//')"
 
+# Only a whole suite (all, quick, slow, landing, a folder under game/tests) takes every free token.
+fresh
+export TMD_SLOTS=2
+rm -rf "$tmp/lane" && mkdir -p "$tmp/lane/tools" "$tmp/lane/game/tests/lobby"
+printf '#!/bin/bash\nnote "$1 ${TMD_TEST_SHARDS:-1}"\n' > "$tmp/lane/tools/test.sh"
+chmod +x "$tmp/lane/tools/test.sh"
+for suite in test_refit_board lobby all res://tests/x.gd; do (cd "$tmp/lane" && "$slot" tools/test.sh "$suite" 2> /dev/null); done
+check "single files take one token, suites all" "test_refit_board 1 lobby 2 all 2 res://tests/x.gd 1" \
+  "$(tr '\n' ' ' < "$tmp/out/order" | sed 's/ $//')"
+export TMD_SLOTS=1
+
+# A run tmd.py's precheck calls a no-op doesn't queue or run; anything else does.
+fresh
+printf '# "precheck"\nimport sys\nprint("nothing to do")\nsys.exit(0 if sys.argv[3:4] == ["sim"] else 1)\n' > "$tmp/lane/tools/tmd.py"
+"$slot" sleep 3 &
+sleep 0.5
+start=$(date +%s)
+out="$(cd "$tmp/lane" && "$slot" tools/test.sh sim 2> /dev/null)"
+check "a no-op skips the queue" "1 nothing to do" "$([ $(($(date +%s) - start)) -lt 2 ] && echo 1 || echo 0) $out"
+wait
+check "a no-op runs nothing and logs noop" " 1" "$(cat "$tmp/out/order" 2>/dev/null) $(grep -c $'\tnoop\t' "$tmp/slots/slot.log")"
+(cd "$tmp/lane" && "$slot" tools/test.sh quick 2> /dev/null)
+(cd "$tmp/lane" && TMD_RERUN=1 "$slot" tools/test.sh sim 2> /dev/null)
+check "anything else runs" "quick 1 sim 1" "$(tr '\n' ' ' < "$tmp/out/order" | sed 's/ $//')"
+
+# Without a precheck in tmd.py (a lane from before it), an import with a current stamp skips.
+fresh
+rm -f "$tmp/lane/tools/tmd.py"
+printf '#!/bin/bash\nnote "import $*"\n' > "$tmp/lane/tools/godot.sh"
+chmod +x "$tmp/lane/tools/godot.sh"
+mkdir -p "$tmp/lane/game/.godot"
+touch -d '-1 hour' "$tmp/lane/game/a.gd"
+touch "$tmp/lane/game/.godot/tmd_import.stamp"
+(cd "$tmp/lane" && "$slot" tools/godot.sh --import 2> /dev/null)
+check "an up-to-date import is skipped" "" "$(cat "$tmp/out/order" 2>/dev/null)"
+touch -d '+1 min' "$tmp/lane/game/a.gd"
+(cd "$tmp/lane" && "$slot" tools/godot.sh --import 2> /dev/null)
+check "an import with a newer file runs" "import --import" "$(cat "$tmp/out/order" 2>/dev/null)"
+rm -f "$tmp/lane/game/.godot/tmd_import.stamp"
+: > "$tmp/out/order"
+touch -d '-1 hour' "$tmp/lane/game/a.gd"
+(cd "$tmp/lane" && "$slot" tools/godot.sh --import 2> /dev/null)
+check "an import with no stamp runs" "import --import" "$(cat "$tmp/out/order" 2>/dev/null)"
+
 # A command's own --help runs without a slot.
 fresh
 "$slot" bash --help > /dev/null 2>&1

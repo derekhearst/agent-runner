@@ -28,6 +28,8 @@
 # Its ticket keeps its place for TMD_SLOT_LEASE minutes (default 15) after it gives up: the same
 # command run again from the same folder (or with the same TMD_SLOT_TICKET) takes the old ticket
 # back, so it doesn't go to the end of the line (13 Nov). A ticket on lease never holds others back.
+# A run with nothing to do (tools/tmd.py precheck: an import with nothing newer than its stamp, a
+# suite that passed unchanged) neither queues nor runs; TMD_SLOT_PRECHECK=0 turns that off (13 Nov).
 # Don't wrap a chain of runs (import && test && shot) in one rfs-slot: it holds the slot throughout.
 # Each run logs a "start" line (its wait) and an "end" line (run time, exit code) in TMD_SLOT_LOG
 # (default ~/.rfs-slots/slot.log, tab-separated). Tokens are lock files held while the command
@@ -170,9 +172,19 @@ case "$kind" in
   render) mapfile -t tokens < <(all_tokens) ;;
   gpu) mapfile -t tokens < <(all_tokens | grep '^render\.') ;;
 esac
+# Only a whole-suite run (all, quick, slow, landing or a suite folder under game/tests) runs sharded
+# and takes every free token. A filter such as test_refit_board runs one Godot (13 Nov: 449 single
+# files in 48 h had each held all three tokens).
+whole_suite() {
+  case "$1" in
+    all | quick | slow | landing) return 0 ;;
+    *[!a-z0-9_]* | "") return 1 ;;
+  esac
+  [ -d "$(dirname "$2")/../game/tests/$1" ]
+}
 if [[ "$(basename "$1")" == test.sh || "$(basename "$1")" == test.cmd ]]; then
   suite="${2:-all}"
-  [[ "$suite" == *.gd* || "$suite" == *::* || "$suite" == -* ]] || want="$slots"
+  ! whole_suite "$suite" "$1" || want="$slots"
 fi
 
 cmdline="$*"
@@ -185,6 +197,37 @@ log_line() {  # event, wait seconds, run seconds, exit code
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -Is)" "$1" "$$" "$kind" "$2" "$3" "$4" "$PWD" "$cmdline" \
     >> "$log" 2>/dev/null || true
 }
+
+# A run with nothing to do doesn't queue (13 Nov: a quarter of the imports re-imported nothing and
+# each waited ~12 min first). tools/tmd.py's `precheck` says whether `godot.sh --import` or
+# `test.sh SUITE` would be a no-op (no tracked file newer than the import stamp; the suite passed
+# with nothing changed since); then it says so and runs nothing, exit 0, without a ticket. For a
+# checkout whose tmd.py has no precheck, an explicit import still skips when its stamp is current.
+# TMD_SLOT_PRECHECK=0 (or TMD_RERUN=1, which also makes tmd.py run it) always queues.
+noop_run() {
+  local tool="$1" tools root stamp
+  tools="$(cd "$(dirname "$tool")" 2>/dev/null && pwd)" || return 1
+  root="$(dirname "$tools")"
+  case "${TMD_SLOT_PRECHECK:-1}:${TMD_RERUN:-${RFS_RERUN:-}}" in 0:* | *:1 | *:on | *:yes | *:true) return 1 ;; esac
+  case "$(basename "$tool")" in test.sh | test.cmd | godot.sh | godot.cmd) ;; *) return 1 ;; esac
+  if [ -f "$tools/tmd.py" ] && grep -q '"precheck"' "$tools/tmd.py" 2>/dev/null; then
+    python3 "$tools/tmd.py" precheck "$(basename "$tool")" "${@:2}" 2>/dev/null
+    return
+  fi
+  [[ "$(basename "$tool")" == godot.* && "${2:-}" == --import && $# -eq 2 ]] || return 1
+  for stamp in "$root/game/.godot/tmd_import.stamp" "$root/game/.godot/rfs_import.stamp" ""; do
+    [ -z "$stamp" ] || [ -f "$stamp" ] && break
+  done
+  [ -n "$stamp" ] || return 1
+  [ -d "$root/game" ] && [ -z "$(cd "$root/game" && find . -path ./.godot -prune -o -type f \( -name '*.gd' -o -name '*.tscn' \
+    -o -name '*.tres' -o -name '*.gdshader' -o -name '*.glb' -o -name '*.png' -o -name '*.wav' -o -name '*.ogg' \
+    -o -name '*.ttf' -o -name '*.json' \) -newer "$stamp" -print -quit 2>/dev/null)" ] || return 1
+  echo "rfs-slot: the import is up to date (nothing changed since its stamp)" >&2
+}
+if noop_run "$@"; then
+  log_line noop 0 0 0
+  exit 0
+fi
 
 # The ticket's key: TMD_SLOT_TICKET (or RFS_TICKET), else this folder and command, so a run that
 # gave up and comes back finds its old ticket.
