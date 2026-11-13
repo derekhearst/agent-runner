@@ -28,6 +28,7 @@
 # Its ticket keeps its place for TMD_SLOT_LEASE minutes (default 15) after it gives up: the same
 # command run again from the same folder (or with the same TMD_SLOT_TICKET) takes the old ticket
 # back, so it doesn't go to the end of the line (13 Nov). A ticket on lease never holds others back.
+# test.sh all, quick and slow are refused (exit 2) unless TMD_WHOLE_SUITE=1: landing runs them (13 Nov).
 # A run with nothing to do (tools/tmd.py precheck: an import with nothing newer than its stamp, a
 # suite that passed unchanged) neither queues nor runs; TMD_SLOT_PRECHECK=0 turns that off (13 Nov).
 # Don't wrap a chain of runs (import && test && shot) in one rfs-slot: it holds the slot throughout.
@@ -185,6 +186,19 @@ whole_suite() {
 if [[ "$(basename "$1")" == test.sh || "$(basename "$1")" == test.cmd ]]; then
   suite="${2:-all}"
   ! whole_suite "$suite" "$1" || want="$slots"
+  # The owner, 13 Nov: no full test runs while working. all, quick and slow (45 min, every free
+  # slot) are for landing, which runs them itself; a lane runs the files or folder it touched.
+  case "$suite" in
+    all | quick | slow)
+      if [ -z "${TMD_WHOLE_SUITE:-}" ]; then
+        echo "rfs-slot: no \`test.sh $suite\` while working (the owner, 13 Nov): run the test files or the" \
+          "folder you touched (tools/test.sh test_x, or a folder such as sim); \`test.sh landing\` runs" \
+          "everything at landing. TMD_WHOLE_SUITE=1 runs it anyway, only when the owner or the integrator" \
+          "asks. Nothing ran." >&2
+        exit 2
+      fi
+      ;;
+  esac
 fi
 
 cmdline="$*"
