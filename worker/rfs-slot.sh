@@ -25,6 +25,9 @@
 # A run gives up after TMD_SLOT_MAX_WAIT minutes in the queue (default 60; 0 waits forever) with
 # exit code 75 and "still queued": it ran nothing, so run it again. An agent's Bash background run
 # is stopped at 2 h, wait included, so it should not wait past that and get stopped mid-import.
+# Its ticket keeps its place for TMD_SLOT_LEASE minutes (default 15) after it gives up: the same
+# command run again from the same folder (or with the same TMD_SLOT_TICKET) takes the old ticket
+# back, so it doesn't go to the end of the line (13 Nov). A ticket on lease never holds others back.
 # Don't wrap a chain of runs (import && test && shot) in one rfs-slot: it holds the slot throughout.
 # Each run logs a "start" line (its wait) and an "end" line (run time, exit code) in TMD_SLOT_LOG
 # (default ~/.rfs-slots/slot.log, tab-separated). Tokens are lock files held while the command
@@ -54,8 +57,10 @@ fi
 dir="${TMD_SLOT_DIR:-${RFS_SLOT_DIR:-$HOME/.rfs-slots}}"
 queue="$dir/queue"
 log="${TMD_SLOT_LOG:-$dir/slot.log}"
-max_wait="${TMD_SLOT_MAX_WAIT:-60}"  # minutes, or seconds with an s (30s)
-if [[ "$max_wait" == *s ]]; then max_wait="${max_wait%s}"; else max_wait=$((max_wait * 60)); fi
+# Minutes, or seconds with an s (30s), as seconds.
+seconds() { if [[ "$1" == *s ]]; then echo "${1%s}"; else echo $(($1 * 60)); fi; }
+max_wait="$(seconds "${TMD_SLOT_MAX_WAIT:-60}")"
+lease="$(seconds "${TMD_SLOT_LEASE:-15}")"
 mkdir -p "$queue"
 
 all_tokens() {
@@ -64,15 +69,20 @@ all_tokens() {
   for ((i = 0; i < slots; i++)); do echo "token.$i"; done
 }
 
-# The live tickets' file names, oldest first; drops the ones whose run has died (nobody holds
-# their lock). Ticket names are a priority digit and a fixed-width time, so they sort as text.
-live_tickets() {
-  local name
+# The tickets oldest first, as "NAME waiting" (a live run holds its lock) or "NAME lease" (its run
+# gave up less than TMD_SLOT_LEASE ago and may come back); drops the rest (runs that died, leases
+# that ran out). Names are a priority digit, a fixed-width time and a key, so they sort as text.
+tickets() {
+  local name lease_end
   while read -r name; do
     [ -n "$name" ] || continue
-    if flock -n "$queue/$name" true 2>/dev/null; then rm -f "$queue/$name"; else echo "$name"; fi
+    if ! flock -n "$queue/$name" true 2>/dev/null; then echo "$name waiting"; continue; fi
+    lease_end="$(cat "$queue/.lease.$name" 2>/dev/null || echo 0)"
+    if [ "$lease_end" -gt "$(date +%s)" ] 2>/dev/null; then echo "$name lease"; continue; fi
+    rm -f "$queue/$name" "$queue/.lease.$name"
   done < <(cd "$queue" && ls -1 | grep '^[0-9]' | LC_ALL=C sort)
 }
+live_tickets() { tickets | awk '$2 == "waiting" { print $1 }'; }
 
 # One ticket for people: kind, minutes queued, worktree, command.
 describe_ticket() {
@@ -92,10 +102,12 @@ status() {
       echo "  $t  busy: $who"
     fi
   done
-  local names=() name
-  mapfile -t names < <(live_tickets)
-  echo "queue (${#names[@]}, oldest first):"
-  for name in "${names[@]}"; do echo "  $(describe_ticket "$name")"; done
+  local lines=() line
+  mapfile -t lines < <(tickets)
+  echo "queue (${#lines[@]}, oldest first; \"left\": gave up, keeps its place for a while):"
+  for line in "${lines[@]}"; do
+    echo "  $(describe_ticket "${line% *}")$([ "${line#* }" = lease ] && echo "  (left)")"
+  done
 }
 
 first=0
@@ -174,17 +186,48 @@ log_line() {  # event, wait seconds, run seconds, exit code
     >> "$log" 2>/dev/null || true
 }
 
-# The ticket: made under a dot name, locked, then renamed, so no waiter ever sees it unlocked.
-name="$((1 - first))$(printf '%019d' "$(date +%s%N)")-$$"
+# The ticket's key: TMD_SLOT_TICKET (or RFS_TICKET), else this folder and command, so a run that
+# gave up and comes back finds its old ticket.
+key="${TMD_SLOT_TICKET:-${RFS_TICKET:-}}"
+key="${key//[^A-Za-z0-9_.-]/_}"
+[ -n "$key" ] || key="$(printf '%s\0%s' "$PWD" "$cmdline" | sha1sum | cut -c1-12)"
+attempt="$queued" name=""
+old=""
+for f in "$queue"/[0-9]*-"$key"; do [ -e "$f" ] && old="${f##*/}" && break; done
+if [ -n "$old" ]; then
+  exec 19<"$queue/$old"
+  if flock -n 19; then
+    lease_end="$(cat "$queue/.lease.$old" 2>/dev/null || echo 0)"
+    if [ "$lease_end" -gt "$(date +%s)" ] 2>/dev/null; then
+      # Back within the lease: the old place, and the wait counts from the first try.
+      IFS=$'\t' read -r _ _ _ queued _ < "$queue/$old" || queued="$attempt"
+      [[ "$queued" =~ ^[0-9]+$ ]] || queued="$attempt"
+      name="$old"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$kind" "$want" "$$" "$queued" "$PWD" "$cmdline" > "$queue/$name"
+      rm -f "$queue/.lease.$name"
+      echo "rfs-slot: back in the queue at the place taken $(((attempt - queued) / 60)) min ago" >&2
+    else
+      rm -f "$queue/$old" "$queue/.lease.$old"
+    fi
+  else
+    key="$key.$$"  # the same command already waiting: this one gets its own ticket
+  fi
+  [ -n "$name" ] || exec 19<&-
+fi
+if [ -z "$name" ]; then
+  # Made under a dot name, locked, then renamed, so no waiter ever sees it unlocked.
+  name="$((1 - first))$(printf '%019d' "$(date +%s%N)")-$key"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$kind" "$want" "$$" "$queued" "$PWD" "$cmdline" > "$queue/.$name"
+  exec 19<"$queue/.$name"
+  flock -n 19
+  mv "$queue/.$name" "$queue/$name"
+fi
 ticket="$queue/$name"
-printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$kind" "$want" "$$" "$queued" "$PWD" "$cmdline" > "$queue/.$name"
-exec 19<"$queue/.$name"
-flock -n 19
-mv "$queue/.$name" "$ticket"
+leased=""
 
 on_exit() {
   local rc=$?
-  rm -f "$ticket"
+  [ -n "$leased" ] || rm -f "$ticket"
   [ -n "$logged" ] && return
   if [ -n "$started" ]; then
     log_line end $((started - queued)) $(($(date +%s) - started)) "$rc"
@@ -231,9 +274,13 @@ while :; do
     for other in "${ahead[@]:0:5}"; do echo "  $(describe_ticket "$other")" >&2; done
     told=1 next_note=$((waited + 600))
   fi
-  if [ "$max_wait" -gt 0 ] && [ "$waited" -ge "$max_wait" ]; then
-    echo "rfs-slot: still queued after $((waited / 60)) min (TMD_SLOT_MAX_WAIT); nothing ran. Run it again" \
-      "later, or see who holds the slots with rfs-slot --status." >&2
+  if [ "$max_wait" -gt 0 ] && [ $(($(date +%s) - attempt)) -ge "$max_wait" ]; then
+    # Keep the place for a while: the same command run again soon takes this ticket back.
+    echo $(($(date +%s) + lease)) > "$queue/.lease.$name"
+    leased=1
+    echo "rfs-slot: still queued after $((waited / 60)) min (TMD_SLOT_MAX_WAIT); nothing ran. Run the same" \
+      "command from this folder within $((lease / 60)) min to keep your place in the queue" \
+      "(or set TMD_SLOT_TICKET=$key); rfs-slot --status shows the queue." >&2
     log_line gave-up "$waited" 0 75
     logged=1
     exit 75

@@ -75,6 +75,35 @@ check "says still queued" "1" "$(grep -c 'still queued' "$tmp/out/err")"
 check "logs gave-up" "1" "$(grep -c $'\tgave-up\t' "$tmp/slots/slot.log")"
 wait
 
+# A run that gave up keeps its place for TMD_SLOT_LEASE: back in time from the same folder with the
+# same command, it goes before later arrivals, and its wait counts from its first try.
+fresh
+"$slot" sleep 5 &
+sleep 0.5
+(cd "$tmp/out" && TMD_SLOT_MAX_WAIT=1s "$slot" bash -c 'note A') 2> /dev/null
+check "gave-up ticket keeps its place" "1" "$("$slot" --status | grep -c '(left)')"
+"$slot" bash -c 'note B' 2> /dev/null &
+sleep 0.5
+(cd "$tmp/out" && "$slot" bash -c 'note A') 2> "$tmp/out/err" &
+wait
+check "back within the lease goes first" "A B" "$(tr '\n' ' ' < "$tmp/out/order" | sed 's/ $//')"
+check "says it is back in its place" "1" "$(grep -c 'back in the queue' "$tmp/out/err")"
+check "wait counted from the first try" "1" \
+  "$(awk -F'\t' '$2 == "start" && $9 == "bash -c note A" { print ($5 >= 4) }' "$tmp/slots/slot.log")"
+
+# A ticket on lease holds nobody back, and an expired lease is a fresh start.
+fresh
+"$slot" sleep 2 &
+sleep 0.5
+(cd "$tmp/out" && TMD_SLOT_MAX_WAIT=1s TMD_SLOT_LEASE=6s "$slot" bash -c 'note A') 2> /dev/null
+start=$(date +%s)
+"$slot" true
+check "a leased ticket holds nobody back" "1" "$([ $(($(date +%s) - start)) -le 2 ] && echo 1 || echo 0)"
+wait
+sleep 6
+(cd "$tmp/out" && "$slot" bash -c 'note A') 2> "$tmp/out/err"
+check "an expired lease starts over" "0" "$(grep -c 'back in the queue' "$tmp/out/err")"
+
 # A ticket whose run died is dropped and doesn't hold the queue.
 fresh
 mkdir -p "$tmp/slots/queue"
