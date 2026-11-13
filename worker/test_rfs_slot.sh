@@ -133,10 +133,19 @@ export TMD_SLOTS=2
 rm -rf "$tmp/lane" && mkdir -p "$tmp/lane/tools" "$tmp/lane/game/tests/lobby"
 printf '#!/bin/bash\nnote "$1 ${TMD_TEST_SHARDS:-1}"\n' > "$tmp/lane/tools/test.sh"
 chmod +x "$tmp/lane/tools/test.sh"
-for suite in test_refit_board lobby all res://tests/x.gd; do (cd "$tmp/lane" && "$slot" tools/test.sh "$suite" 2> /dev/null); done
+for suite in test_refit_board lobby all res://tests/x.gd; do (cd "$tmp/lane" && TMD_WHOLE_SUITE=1 "$slot" tools/test.sh "$suite" 2> /dev/null); done
 check "single files take one token, suites all" "test_refit_board 1 lobby 2 all 2 res://tests/x.gd 1" \
   "$(tr '\n' ' ' < "$tmp/out/order" | sed 's/ $//')"
 export TMD_SLOTS=1
+
+# all, quick and slow are refused unless TMD_WHOLE_SUITE=1; landing and folders run.
+fresh
+for suite in all quick slow; do (cd "$tmp/lane" && "$slot" tools/test.sh "$suite" 2> "$tmp/out/err"); echo "$?" >> "$tmp/out/codes"; done
+(cd "$tmp/lane" && "$slot" tools/test.sh landing 2> /dev/null)
+(cd "$tmp/lane" && "$slot" tools/test.sh lobby 2> /dev/null)
+check "whole suites refused" "2 2 2" "$(tr '\n' ' ' < "$tmp/out/codes" | sed 's/ $//')"
+check "says what to run instead" "1" "$(grep -c 'files or the' "$tmp/out/err")"
+check "landing and folders run" "landing 1 lobby 1" "$(tr '\n' ' ' < "$tmp/out/order" | sed 's/ $//')"
 
 # A run tmd.py's precheck calls a no-op doesn't queue or run; anything else does.
 fresh
@@ -148,9 +157,9 @@ out="$(cd "$tmp/lane" && "$slot" tools/test.sh sim 2> /dev/null)"
 check "a no-op skips the queue" "1 nothing to do" "$([ $(($(date +%s) - start)) -lt 2 ] && echo 1 || echo 0) $out"
 wait
 check "a no-op runs nothing and logs noop" " 1" "$(cat "$tmp/out/order" 2>/dev/null) $(grep -c $'\tnoop\t' "$tmp/slots/slot.log")"
-(cd "$tmp/lane" && "$slot" tools/test.sh quick 2> /dev/null)
+(cd "$tmp/lane" && "$slot" tools/test.sh lobby 2> /dev/null)
 (cd "$tmp/lane" && TMD_RERUN=1 "$slot" tools/test.sh sim 2> /dev/null)
-check "anything else runs" "quick 1 sim 1" "$(tr '\n' ' ' < "$tmp/out/order" | sed 's/ $//')"
+check "anything else runs" "lobby 1 sim 1" "$(tr '\n' ' ' < "$tmp/out/order" | sed 's/ $//')"
 
 # Without a precheck in tmd.py (a lane from before it), an import with a current stamp skips.
 fresh
