@@ -49,7 +49,8 @@ cat > "$HOME/.claude/CLAUDE.md" <<'RULES'
   and shells, plus a 4 GB render slot for shots and windowed godot.sh scenes, and sets the shard count.
   GPU jobs (bake.sh, bpy.sh) take only the render slot, one at a time. Runs queue first come first
   served; never retry it in a loop. A run still queued after 60 min gives up with exit 75 and
-  "still queued" having run nothing: run it again later. `rfs-slot --status` shows who holds the
+  "still queued" having run nothing: run the same command from the same folder within 15 min
+  and it gets its old place back. `rfs-slot --status` shows who holds the
   slots and the queue. Don't wrap a chain (import && test && shot) in one rfs-slot: it holds the
   slot throughout; give each step its own.
 - Never raise TMD_SLOTS, TMD_TEST_SHARDS or the memory guard to go faster.

@@ -131,7 +131,8 @@ same user could read the worker process's environment.
   (`tools/bake.sh`, `tools/bpy.sh`) take only the render token, so one runs at a time, and a bake
   imports in a memory slot first; everything else takes a memory token (`TMD_SLOT_KIND` overrides).
   Waiters queue first come first served (`--first` jumps the queue: the seed refresh) and give up
-  with exit 75 after `TMD_SLOT_MAX_WAIT` minutes (60). `rfs-slot --status` shows who holds what and
+  with exit 75 after `TMD_SLOT_MAX_WAIT` minutes (60); the same command run again from the same folder
+  within `TMD_SLOT_LEASE` minutes (15) takes its old place back (`TMD_SLOT_TICKET` names a ticket by hand). `rfs-slot --status` shows who holds what and
   the queue; `~/.rfs-slots/slot.log` has each run's wait and run time. A whole test suite takes every
   free token and runs that many shards (`landing` one fewer, for its lint). The old `RFS_*` names
   still work. `~/.claude/CLAUDE.md` (rewritten on every start) gives Claude sessions on the box
