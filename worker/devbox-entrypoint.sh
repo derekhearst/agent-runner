@@ -57,6 +57,10 @@ cat > "$HOME/.claude/CLAUDE.md" <<'RULES'
 - At most 3 subagents or workflow agents at once on the box; their heavy runs go through
   `rfs-slot` like yours.
 - Start long runs with the Bash tool's run_in_background, never `cmd &`.
+- Never kill a process you found with `pgrep -f`/`pkill -f`, or its parent: the pattern also
+  matches the shell running your command, whose parent is your own Claude session, so you
+  kill yourself and the thread goes dead (it won't wake on a new message). Take the pid from
+  `rfs-slot --status` or `ps`, check its command line, and kill only that pid.
 
 ## Worktrees: one per lane, removed once landed
 - The main checkout is ~/work/RigForSilent. Make a lane with `rfs-lane new LANE` (worktree
