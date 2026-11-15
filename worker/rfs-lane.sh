@@ -11,7 +11,9 @@
 #                              queues ahead of other runs (rfs-slot --first).
 #   rfs-lane done LANE         removes the worktree once it is clean, pushed and in main.
 #   rfs-lane prune             `done` for every lane idle TMD_SWEEP_IDLE_H hours (24) that no
-#                              process is using; lists the ones it keeps and why.
+#                              process is using, and for clean, fully pushed lanes not in main
+#                              (concept branches) idle TMD_SWEEP_PUSHED_IDLE_D days (7): their
+#                              branch stays on GitHub. Lists the ones it keeps and why.
 #   rfs-lane sweep [--dry-run] [--urgent] [--if-low]
 #                              prune, then clear scratch older than TMD_SWEEP_SCRATCH_D days (3):
 #                              Claude session folders and loose files in /tmp. Prints what it
@@ -207,7 +209,12 @@ prune_lanes() {
   for dir in "$root"/rfs-*; do
     [ -e "$dir/.git" ] || continue
     why="$(blocker "$dir")"
-    [ -n "$why" ] || why="$(recent "$dir" "$idle")"
+    if [ -z "$why" ]; then
+      why="$(recent "$dir" "$idle")"
+    elif [ "$why" = "not in main yet" ]; then
+      # Clean and all on GitHub (concept branches that never merge): goes after a week idle.
+      why="$(recent "$dir" $((${TMD_SWEEP_PUSHED_IDLE_D:-7} * 24)) | sed 's/^used/not in main yet, used/')"
+    fi
     if [ -n "$why" ]; then
       echo "kept $dir: $why"
     elif [ -n "$dry" ]; then

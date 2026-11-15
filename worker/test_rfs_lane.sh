@@ -104,6 +104,18 @@ cd "$HOME/work/rfs-edited" && git commit -qam wip && old_files edited
 rfs-lane sweep > "$tmp/sweep.out" 2>&1
 check "sweep: unpushed commit kept" kept "$(gone edited)"
 check "sweep: --if-low does nothing with room" "" "$(rfs-lane sweep --if-low 2>&1)"
+# A clean lane whose commits are all pushed but not in main goes after a week idle, not before.
+for l in concept fresh-concept; do
+  rfs-lane new "$l" > "$tmp/out" 2>&1
+  (cd "$HOME/work/rfs-$l" && echo c > game/c.txt && git add -A && git commit -qm c && git push -q -u origin HEAD 2>/dev/null)
+done
+find "$HOME/work/rfs-concept" -mindepth 1 -path '*/.git' -prune -o -exec touch -h -d '8 days ago' {} +
+old_files fresh-concept
+sed -i -E "s/> [0-9]+ ([-+][0-9]{4})\t/> $(date -d '8 days ago' +%s) \1\t/" "$(git -C "$HOME/work/rfs-concept" rev-parse --absolute-git-dir)/logs/HEAD"
+rfs-lane sweep > "$tmp/sweep.out" 2>&1
+check "sweep: pushed concept lane idle a week removed" removed "$(gone concept)"
+check "sweep: pushed concept lane idle 2 days kept" kept "$(gone fresh-concept)"
+check "sweep: its branch stays on origin" 1 "$(git -C "$tmp/origin.git" branch --list claude/rfs-concept | wc -l)"
 # rfs-slot under the floor even after a sweep: refused, nothing run, a loud warning.
 cd "$HOME/work/rfs-used"
 out="$(TMD_DISK_LOW_GB=999999 TMD_DISK_FLOOR_GB=999999 rfs-slot touch "$tmp/ran" 2>&1)"; code=$?
