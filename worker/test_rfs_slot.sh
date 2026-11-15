@@ -21,6 +21,8 @@ check() {  # name, expected, actual
 note() { echo "$1" >> "$tmp/out/order"; }
 export -f note
 export tmp
+# The host's free disk space must not set off the low-disk guard here (test_rfs_lane.sh tests it).
+export TMD_DISK_LOW_GB=0
 
 # --help and --status queue nothing.
 fresh
