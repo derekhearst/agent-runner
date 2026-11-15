@@ -72,8 +72,17 @@ cat > "$HOME/.claude/CLAUDE.md" <<'RULES'
 - New lanes clone the last published seed cache (~/work/.rfs-seed-caches/current: origin/main,
   imported), even while a refresh runs; a lane that prints "no seed cache yet" will do a full
   import, so tell the owner rather than starting another lane. After a landing,
-  run `rfs-lane seed` (the box also does it hourly when main moves, and prunes landed lanes;
-  log ~/.sshd/lane-prune.log). Never edit or build in ~/work/.rfs-seed.
+  run `rfs-lane seed` (the box also does it hourly when main moves). Never edit or build in ~/work/.rfs-seed.
+
+## Disk: the Apps pool filled on 15 Nov (ENOSPC stopped every lane)
+- The box runs `rfs-lane sweep` hourly (and every 10 min, plus before each rfs-slot run, when under
+  150 GB free): it removes lanes that are in main (or squash-merged at their head), idle 24 h (6 h when
+  low) and used by no process, and /tmp scratch older than 3 days (1 when low). Godot's .import/.uid
+  churn doesn't keep a lane. Log ~/.sshd/disk-sweep.log; removals in ~/work/.rfs-lane-removed.log.
+- It never removes uncommitted or unpushed work, or a lane holding a LANE_KEEP file. Add one to a lane
+  you must keep after it lands (a before/calib copy), and delete it when done.
+- Under 25 GB free rfs-slot refuses heavy runs (exit 75, nothing ran). A "LOW DISK" warning from
+  rfs-slot means: commit and push now, `rfs-lane done` your finished lanes, and tell Derek.
 - The `agent`-label issue worker shares ~/work and the slots: its lanes are ~/work/rfs-issue-N.
   Leave those to it unless they have landed.
 
@@ -163,18 +172,25 @@ else
   echo "no worker settings; the issue agent's worker is not started" > "$HOME/.sshd/worker.log"
 fi
 
-# Every hour: re-import the lane seed if main has moved, so new lanes start warm, and remove
-# landed lanes (the dev box's and the issue agent's) even when the session that made them never
-# came back. rfs-lane keeps anything uncommitted or unpushed.
+# Every hour: re-import the lane seed if main has moved, so new lanes start warm, and sweep: remove
+# landed lanes idle a day (the dev box's and the issue agent's) even when the session that made
+# them never came back, and scratch older than 3 days. Every 10 minutes, a sweep with the shorter
+# idle times if the Apps pool is under 150 GB free (15 Nov it filled). rfs-lane keeps anything
+# uncommitted, unpushed, in use or marked LANE_KEEP. What it removed: ~/.sshd/disk-sweep.log.
 (
+  n=0
   while true; do
-    sleep 3600
-    if [ -d "$HOME/work/RigForSilent/.git" ]; then
-      rfs-lane seed --if-stale || true
-      rfs-lane prune || true
+    sleep 600
+    n=$((n + 1))
+    [ -d "$HOME/work/RigForSilent/.git" ] || continue
+    if [ $((n % 6)) = 0 ]; then
+      rfs-lane seed --if-stale >> "$HOME/.sshd/lane-prune.log" 2>&1 || true
+      rfs-lane sweep || true
+    else
+      rfs-lane sweep --if-low || true
     fi
   done
-) > "$HOME/.sshd/lane-prune.log" 2>&1 &
+) >> "$HOME/.sshd/disk-sweep.log" 2>&1 &
 
 # Once a day (and at each start): report this box's Claude Code usage to the usage dashboard
 # (github.com/derekhearst/claude-stats) as source "devbox". It needs ~/claude-stats/collector.config.json,

@@ -17,7 +17,7 @@ check() {
 mkdir -p "$tmp/bin"
 ln -s "$here/rfs-slot.sh" "$tmp/bin/rfs-slot"
 ln -s "$here/rfs-lane.sh" "$tmp/bin/rfs-lane"
-export TMD_REFLINK=auto PATH="$tmp/bin:$PATH" HOME="$tmp/home" TMD_SLOT_DIR="$tmp/slots" TMD_SLOTS=1 TMD_SLOT_RENDERS=1
+export TMD_DISK_LOW_GB=0 TMD_SWEEP_TMP="$tmp/scratch" TMD_REFLINK=auto PATH="$tmp/bin:$PATH" HOME="$tmp/home" TMD_SLOT_DIR="$tmp/slots" TMD_SLOTS=1 TMD_SLOT_RENDERS=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 mkdir -p "$HOME/work"
 git config --global init.defaultBranch main
@@ -70,5 +70,44 @@ check "seed import ran through rfs-slot" "1" "$(grep -c $'\tstart\t.*--import' "
 rm -rf "$HOME/work/.rfs-seed-caches"
 rfs-lane seed --if-stale > "$tmp/out" 2>&1
 check "existing seed published" "$two" "$(cat "$HOME/work/.rfs-seed-caches/current/.godot/stamp" 2>/dev/null)"
+
+# sweep: a landed lane goes even with Godot's import churn; work, LANE_KEEP, recent use and a
+# process inside keep a lane; a copy of main loses its added files to an archive, not for good.
+mkdir -p "$TMD_SWEEP_TMP/claude-1/proj/old-session" "$TMD_SWEEP_TMP/claude-1/proj/new-session"
+touch -d '5 days ago' "$TMD_SWEEP_TMP/claude-1/proj/old-session" "$TMD_SWEEP_TMP/old.png"
+touch "$TMD_SWEEP_TMP/new.png"
+for l in churn edited kept used busy x-before; do rfs-lane new "$l" > "$tmp/out" 2>&1; done
+echo churn > "$HOME/work/rfs-churn/game/a.png.import"; echo log > "$HOME/work/rfs-churn/run.log"
+echo 3 > "$HOME/work/rfs-edited/game/a.txt"
+touch "$HOME/work/rfs-kept/LANE_KEEP"
+echo rig > "$HOME/work/rfs-x-before/game/shots.gd"
+(cd "$HOME/work/rfs-busy" && exec sleep 30) &
+busy=$!
+old_files() { find "$HOME/work/rfs-$1" -mindepth 1 -path '*/.git' -prune -o -exec touch -h -d '2 days ago' {} +; }
+for l in churn edited kept busy x-before; do old_files "$l"; done
+rfs-lane sweep > "$tmp/sweep.out" 2>&1
+kill "$busy" 2>/dev/null
+gone() { [ -e "$HOME/work/rfs-$1" ] && echo kept || echo removed; }
+check "sweep: landed lane with import churn removed" removed "$(gone churn)"
+check "sweep: its root log kept" log "$(cat "$HOME/work/runlogs/removed/rfs-churn/run.log" 2>/dev/null)"
+check "sweep: uncommitted edit kept" kept "$(gone edited)"
+check "sweep: LANE_KEEP kept" kept "$(gone kept)"
+check "sweep: lane used within the day kept" kept "$(gone used)"
+check "sweep: lane a process sits in kept" kept "$(gone busy)"
+check "sweep: copy of main removed" removed "$(gone x-before)"
+check "sweep: its added files archived" game/shots.gd "$(tar -tzf "$HOME/work/runlogs/removed/rfs-x-before/added.tgz" 2>/dev/null)"
+check "sweep: removal logged" 2 "$(wc -l < "$HOME/work/.rfs-lane-removed.log")"
+check "sweep: old scratch cleared" "absent absent" "$([ -e "$TMD_SWEEP_TMP/old.png" ] && echo present || echo absent) $([ -e "$TMD_SWEEP_TMP/claude-1/proj/old-session" ] && echo present || echo absent)"
+check "sweep: new scratch kept" "present present" "$([ -e "$TMD_SWEEP_TMP/new.png" ] && echo present || echo absent) $([ -e "$TMD_SWEEP_TMP/claude-1/proj/new-session" ] && echo present || echo absent)"
+# An unpushed commit keeps a lane, landed base or not.
+cd "$HOME/work/rfs-edited" && git commit -qam wip && old_files edited
+rfs-lane sweep > "$tmp/sweep.out" 2>&1
+check "sweep: unpushed commit kept" kept "$(gone edited)"
+check "sweep: --if-low does nothing with room" "" "$(rfs-lane sweep --if-low 2>&1)"
+# rfs-slot under the floor even after a sweep: refused, nothing run, a loud warning.
+cd "$HOME/work/rfs-used"
+out="$(TMD_DISK_LOW_GB=999999 TMD_DISK_FLOOR_GB=999999 rfs-slot touch "$tmp/ran" 2>&1)"; code=$?
+check "rfs-slot: refused under the floor" "75 absent" "$code $([ -e "$tmp/ran" ] && echo present || echo absent)"
+check "rfs-slot: low disk warning" 1 "$(grep -c 'LOW DISK' <<<"$out")"
 
 [ "$fails" -eq 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }

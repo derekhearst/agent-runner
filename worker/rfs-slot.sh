@@ -32,6 +32,8 @@
 # A run with nothing to do (tools/tmd.py precheck: an import with nothing newer than its stamp, a
 # suite that passed unchanged) neither queues nor runs; TMD_SLOT_PRECHECK=0 turns that off (13 Nov).
 # Don't wrap a chain of runs (import && test && shot) in one rfs-slot: it holds the slot throughout.
+# Low disk space (TMD_DISK_LOW_GB, 150) starts an rfs-lane sweep and a loud warning; under
+# TMD_DISK_FLOOR_GB (25) after the sweep the run is refused with exit 75 (see disk_check).
 # Each run logs a "start" line (its wait) and an "end" line (run time, exit code) in TMD_SLOT_LOG
 # (default ~/.rfs-slots/slot.log, tab-separated). Tokens are lock files held while the command
 # runs, so they free themselves when it ends or is killed. Each setting also reads its old RFS_*
@@ -242,6 +244,40 @@ if noop_run "$@"; then
   log_line noop 0 0 0
   exit 0
 fi
+
+# Disk space on the Apps pool (15 Nov: it filled and every lane stopped with ENOSPC). Under
+# TMD_DISK_LOW_GB (150) a sweep starts in the background (rfs-lane sweep: idle landed lanes, old
+# scratch) and the run warns loudly; under TMD_DISK_FLOOR_GB (25) the sweep runs first, and if
+# space is still short the run is refused with exit 75, having run nothing.
+# rfs-lane sweep in place of this (sub)shell, without its open fds: a caller's lock (the seed
+# refresh's) must not stay held by a sweep that outlives the run. Call it in a subshell.
+exec_sweep() {
+  exec bash -c 'for f in /proc/$$/fd/*; do n="${f##*/}"; [ "$n" -le 2 ] || eval "exec $n>&-"; done
+    exec rfs-lane sweep "$@"' sweep "$@" >> "$HOME/.sshd/disk-sweep.log" 2>&1
+}
+disk_free_gb() { df -P -BG "$HOME" 2>/dev/null | awk 'NR == 2 { sub("G", "", $4); print $4 }'; }
+disk_check() {
+  local free low="${TMD_DISK_LOW_GB:-150}" floor="${TMD_DISK_FLOOR_GB:-25}"
+  free="$(disk_free_gb)"
+  [[ "$free" =~ ^[0-9]+$ ]] && [ "$free" -lt "$low" ] || return 0
+  command -v rfs-lane >/dev/null || return 0
+  mkdir -p "$HOME/.sshd" 2>/dev/null || true
+  echo "rfs-slot: !!! LOW DISK: ${free} GB free on the Apps pool (low is ${low} GB). Idle landed lanes" \
+    "and old scratch are being swept; commit and push your lane's work, and remove lanes you are done with" \
+    "(rfs-lane done LANE). !!!" >&2
+  if [ "$free" -ge "$floor" ]; then
+    (exec_sweep --if-low &)
+    return 0
+  fi
+  (exec_sweep --urgent) || true
+  free="$(disk_free_gb)"
+  [ "$free" -ge "$floor" ] && return 0
+  echo "rfs-slot: refused: only ${free} GB free after the sweep (floor ${floor} GB), so this run would hit" \
+    "ENOSPC mid-way. Nothing ran. Tell Derek (TrueNAS snapshots or other datasets need clearing)." >&2
+  log_line disk-full 0 0 75
+  exit 75
+}
+disk_check
 
 # The ticket's key: TMD_SLOT_TICKET (or RFS_TICKET), else this folder and command, so a run that
 # gave up and comes back finds its old ticket.
