@@ -17,7 +17,8 @@
 #   rfs-lane sweep [--dry-run] [--urgent] [--if-low]
 #                              prune, then clear scratch older than TMD_SWEEP_SCRATCH_D days (3):
 #                              Claude session folders and loose files in /tmp. Prints what it
-#                              removed and the space freed. --urgent (or free space under
+#                              removed and the space freed. Also ~/work/rfs-share/<lane> folders
+#                              untouched TMD_SWEEP_SHARE_D days (14) whose lane is gone. --urgent (or free space under
 #                              TMD_DISK_LOW_GB, 150) cuts the idle times to 6 hours and 1 day;
 #                              --if-low does nothing unless space is under TMD_DISK_LOW_GB. The box
 #                              runs it hourly, `--if-low` every 10 min, and rfs-slot before heavy runs.
@@ -247,6 +248,23 @@ sweep_scratch() {
   rm -f "$busy_list"; busy_list=""
 }
 
+# ~/work/rfs-share/<lane>: renders and logs sessions keep outside their lane (what gets reviewed is
+# pushed to pr-shots). A folder goes once nothing in it changed for TMD_SWEEP_SHARE_D days (14) and
+# its lane is gone. Until 15 Nov nothing cleared it (39 GB).
+sweep_share() {
+  local days="$1" dry="${2:-}" e
+  [ -d "$root/rfs-share" ] || return 0
+  scan_busy
+  for e in "$root"/rfs-share/*; do
+    [ -e "$e" ] || continue
+    [ ! -e "$root/rfs-$(basename "$e")" ] || continue
+    in_use "$e" && continue
+    [ -z "$(find "$e" -mmin "-$((days * 1440))" -print -quit 2>/dev/null)" ] || continue
+    if [ -n "$dry" ]; then echo "would clear $e"; else rm -rf "$e" && echo "cleared $e"; fi
+  done
+  rm -f "$busy_list"; busy_list=""
+}
+
 cmd="${1:-}"; shift || true
 case "$cmd" in
   new)
@@ -362,6 +380,7 @@ case "$cmd" in
     echo "sweep $(date -u +%FT%TZ): ${before} GB free"
     prune_lanes "$idle" "$dry"
     sweep_scratch "$days" "$dry"
+    sweep_share "${TMD_SWEEP_SHARE_D:-14}" "$dry"
     sync; sleep 5  # ZFS frees asynchronously
     echo "sweep done: ${before} GB -> $(free_gb) GB free"
     ;;

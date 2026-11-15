@@ -85,6 +85,8 @@ echo rig > "$HOME/work/rfs-x-before/game/shots.gd"
 busy=$!
 old_files() { find "$HOME/work/rfs-$1" -mindepth 1 -path '*/.git' -prune -o -exec touch -h -d '2 days ago' {} +; }
 for l in churn edited kept busy x-before; do old_files "$l"; done
+mkdir -p "$HOME/work/rfs-share/gone-old" "$HOME/work/rfs-share/gone-new" "$HOME/work/rfs-share/kept"
+touch -d '20 days ago' "$HOME/work/rfs-share/gone-old" "$HOME/work/rfs-share/kept"
 rfs-lane sweep > "$tmp/sweep.out" 2>&1
 kill "$busy" 2>/dev/null
 gone() { [ -e "$HOME/work/rfs-$1" ] && echo kept || echo removed; }
@@ -99,6 +101,9 @@ check "sweep: its added files archived" game/shots.gd "$(tar -tzf "$HOME/work/ru
 check "sweep: removal logged" 2 "$(wc -l < "$HOME/work/.rfs-lane-removed.log")"
 check "sweep: old scratch cleared" "absent absent" "$([ -e "$TMD_SWEEP_TMP/old.png" ] && echo present || echo absent) $([ -e "$TMD_SWEEP_TMP/claude-1/proj/old-session" ] && echo present || echo absent)"
 check "sweep: new scratch kept" "present present" "$([ -e "$TMD_SWEEP_TMP/new.png" ] && echo present || echo absent) $([ -e "$TMD_SWEEP_TMP/claude-1/proj/new-session" ] && echo present || echo absent)"
+check "sweep: share folder of a gone lane, idle, cleared" absent "$([ -e "$HOME/work/rfs-share/gone-old" ] && echo present || echo absent)"
+check "sweep: recent share folder kept" present "$([ -e "$HOME/work/rfs-share/gone-new" ] && echo present || echo absent)"
+check "sweep: share folder of a live lane kept" present "$([ -e "$HOME/work/rfs-share/kept" ] && echo present || echo absent)"
 # An unpushed commit keeps a lane, landed base or not.
 cd "$HOME/work/rfs-edited" && git commit -qam wip && old_files edited
 rfs-lane sweep > "$tmp/sweep.out" 2>&1
