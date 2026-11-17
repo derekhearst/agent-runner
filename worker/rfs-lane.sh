@@ -18,7 +18,8 @@
 #                              prune, then clear scratch older than TMD_SWEEP_SCRATCH_D days (3):
 #                              Claude session folders and loose files in /tmp. Prints what it
 #                              removed and the space freed. Also ~/work/rfs-share/<lane> folders
-#                              untouched TMD_SWEEP_SHARE_D days (14) whose lane is gone. --urgent (or free space under
+#                              untouched TMD_SWEEP_SHARE_D days (14) whose lane is gone. When
+#                              low, also `git lfs prune` in the main checkout once a day. --urgent (or free space under
 #                              TMD_DISK_LOW_GB, 150) cuts the idle times to 6 hours and 1 day;
 #                              --if-low does nothing unless space is under TMD_DISK_LOW_GB. The box
 #                              runs it hourly, `--if-low` every 10 min, and rfs-slot before heavy runs.
@@ -381,6 +382,13 @@ case "$cmd" in
     prune_lanes "$idle" "$dry"
     sweep_scratch "$days" "$dry"
     sweep_share "${TMD_SWEEP_SHARE_D:-14}" "$dry"
+    # When low, at most once a day: LFS objects of old versions, already on GitHub and checked out
+    # in no lane (git lfs prune keeps unpushed and recent ones). 17 Nov it cut .git/lfs 47 -> 13 GB.
+    stamp="$root/.rfs-lfs-prune.stamp"
+    if [ -n "$urgent" ] && [ -z "$(find "$stamp" -mmin -1440 2>/dev/null)" ]; then
+      if [ -n "$dry" ]; then git_main lfs prune --dry-run 2>&1 | tail -1
+      else git_main lfs prune 2>&1 | tail -1 && touch "$stamp"; fi
+    fi
     sync; sleep 5  # ZFS frees asynchronously
     echo "sweep done: ${before} GB -> $(free_gb) GB free"
     ;;
