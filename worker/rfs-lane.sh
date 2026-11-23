@@ -387,7 +387,13 @@ case "$cmd" in
     stamp="$root/.rfs-lfs-prune.stamp"
     if [ -n "$urgent" ] && [ -z "$(find "$stamp" -mmin -1440 2>/dev/null)" ]; then
       if [ -n "$dry" ]; then git_main lfs prune --dry-run 2>&1 | tail -1
-      else git_main lfs prune 2>&1 | tail -1 && touch "$stamp"; fi
+      else
+        # It fails ("missing object") when a busy lane writes objects mid-scan (23 Nov): retry.
+        for try in 1 2 3; do
+          out="$(git_main lfs prune 2>&1 | tail -1)"; echo "$out"
+          case "$out" in *failed* | *error*) sleep 30 ;; *) touch "$stamp"; break ;; esac
+        done
+      fi
     fi
     sync; sleep 5  # ZFS frees asynchronously
     echo "sweep done: ${before} GB -> $(free_gb) GB free"
