@@ -30,8 +30,15 @@ These rules are meant to go into TheMerrowDeep's `docs/AGENT_WORK.md`.
   running; the box may be busy for a while, so don't push again just to retry.
 - **Before the last push, merge `main`** into your branch: the box tests your branch's head as it
   is, not merged with main.
-- **What the box can't do for you yet:** screenshots and anything you have to look at
-  (`tools/shot.sh`). Hand visual checks to a box session or list them in your report.
+- **Pictures:** add `Box-Shot: NAME` to the same last paragraph and commit
+  `tools/ci_shots/NAME.txt`: the box runs its steps, one per line, each queued on its own
+  (`tools/bpy.sh ...` to rebuild, `tools/shot.sh SCENE out/ci_shots/after --only=...`, and
+  `tools/shot.sh SCENE out/ci_shots/before --before --only=...` for the same views from main;
+  `tools/godot.sh --import` if a step needs it; nothing else). Every picture written under
+  `out/ci_shots/` comes back in the "TrueNAS box tests" comment as a 1280 px JPG on the `pr-shots`
+  branch (`ci/pr-N/SHA/`, `/` in its path as `__`), which you can fetch with
+  `gh api repos/derekhearst/TheMerrowDeep/contents/ci/pr-N/SHA/FILE.jpg?ref=pr-shots`.
+  `Box-Test: none` with it renders without testing. Bakes stay with the integrator.
 
 ## Who gets tested
 
