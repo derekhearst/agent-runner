@@ -186,15 +186,22 @@ PR closes -> rfs-lane done ci-pr-12 --force (unpushed or uncommitted work is sti
   the `box/landing` check. `Box-Test: lobby` (a suite folder, a test name, `tools`, `assets`): that
   suite as `box/test`. `Box-Test: none`: nothing. Only the newest push of a PR is tested; an older
   head still queued is marked superseded. One run at a time.
+- **Pictures:** a `Box-Shot: NAME` trailer on the same commit also runs the PR's own
+  `tools/ci_shots/NAME.txt` as the `box/shots` check, after any tests: one step per line
+  (`tools/bpy.sh ...`, `tools/shot.sh ... out/ci_shots/...`, `tools/godot.sh --import`; no other
+  commands, no shell operators, at most 12), each through rfs-slot on its own. Every picture the
+  steps write under `out/ci_shots/` (24 at most) is scaled to 1280 px JPG, pushed to the repo's
+  orphan branch `pr-shots` under `ci/pr-N/SHA/` (never LFS) and shown in the PR comment.
 - **Whose:** PRs by `TMD_CI_AUTHORS` (derekhearst, the account cloud tasks push as) from branches
   in the repo itself. Anyone else's needs the `box: test` label (triage access); forks never run;
   `box: skip` turns a PR off. A branch a box session has checked out in its own lane is left to it.
 - **The token** (`CI_GH_TOKEN`, else the worker's `GH_TOKEN`) needs **Commit statuses RW** and
-  Pull requests RW on the game repo. It reaches only rfs-ci's own gh and git calls; the test runs
+  Pull requests RW on the game repo, and **Contents RW** for `Box-Shot` (the push to `pr-shots`;
+  without it the pictures still render and the check reports that it couldn't publish them). It reaches only rfs-ci's own gh and git calls; the test runs
   get none. Note what this does run: PR code, unattended, as the `agent` user, which can read
   the dev box's home (the Claude and gh logins). That is why forks and other authors need the label.
 - **Logs:** `~/.sshd/ci.log` (what it picked and why), `~/work/runlogs/ci/pr-N-SHA-SUITE.log` (each
-  run). `rfs-ci --dry-run` lists what it would run and posts nothing.
+  run; `pr-N-SHA-shots-NAME.log` for pictures). `rfs-ci --dry-run` lists what it would run and posts nothing.
 - **How cloud tasks work with it:** [docs/cloud-tasks.md](docs/cloud-tasks.md), meant for
   TheMerrowDeep's `docs/AGENT_WORK.md`.
 
