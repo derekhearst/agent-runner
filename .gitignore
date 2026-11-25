@@ -1,3 +1,4 @@
 .env
 deploy/.env
 *.local
+__pycache__/
