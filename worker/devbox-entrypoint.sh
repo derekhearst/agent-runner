@@ -12,7 +12,9 @@ export HOME=/home/agent
 # of the environment, so sshd, Remote Control and their shells never inherit them.
 w_key="${ANTHROPIC_ENVIRONMENT_KEY:-}" w_env="${ANTHROPIC_ENVIRONMENT_ID:-}" w_gh="${GH_TOKEN:-}"
 w_name="${GIT_NAME:-Claude Agent}" w_email="${GIT_EMAIL:-noreply@anthropic.com}"
-unset ANTHROPIC_ENVIRONMENT_KEY ANTHROPIC_ENVIRONMENT_ID GH_TOKEN GIT_NAME GIT_EMAIL
+# rfs-ci's token (Commit statuses RW on the game repo): its own if set, else the worker's.
+c_gh="${CI_GH_TOKEN:-$w_gh}"
+unset ANTHROPIC_ENVIRONMENT_KEY ANTHROPIC_ENVIRONMENT_ID GH_TOKEN GIT_NAME GIT_EMAIL CI_GH_TOKEN
 mkdir -p "$HOME/.ssh" "$HOME/.sshd" "$HOME/work"
 chmod 700 "$HOME/.ssh" "$HOME/.sshd"
 
@@ -85,6 +87,9 @@ cat > "$HOME/.claude/CLAUDE.md" <<'RULES'
   rfs-slot means: commit and push now, `rfs-lane done` your finished lanes, and tell Derek.
 - The `agent`-label issue worker shares ~/work and the slots: its lanes are ~/work/rfs-issue-N.
   Leave those to it unless they have landed.
+- rfs-ci (the box's CI for pull requests that cloud tasks push) shares them too: its lanes are
+  ~/work/rfs-ci-pr-N, reset to each new push and removed when the PR closes. Never work in one.
+  Its runs show in `rfs-slot --status` like yours; its log is ~/.sshd/ci.log.
 
 ## GPU
 - `DISPLAY=:99` (Xvfb) is set, so Godot renders on the RTX 2060. The card is shared with
@@ -170,6 +175,24 @@ if [ -n "$w_key" ] && [ -n "$w_env" ] && [ -n "$w_gh" ]; then
   ) > "$HOME/.sshd/worker.log" 2>&1 &
 else
   echo "no worker settings; the issue agent's worker is not started" > "$HOME/.sshd/worker.log"
+fi
+
+# rfs-ci (worker/ci.py): tests the pull requests that cloud tasks push to the game repo, in lanes
+# and rfs-slot slots like everything else here, and reports each result as a commit status and a
+# PR comment. Off unless DEVBOX_CI=1. Like the worker, its token reaches only its own process and
+# its gh and git calls (the test runs get none), and its git and gh config live in ~/.agent-ci.
+if [ "${DEVBOX_CI:-0}" = 1 ] && [ -n "$c_gh" ]; then
+  (
+    mkdir -p "$HOME/.agent-ci/gh"
+    while true; do
+      env GH_TOKEN="$c_gh" GIT_CONFIG_GLOBAL="$HOME/.agent-ci/gitconfig" GH_CONFIG_DIR="$HOME/.agent-ci/gh" \
+        PATH="$HOME/.local/bin:$PATH" sh -c 'gh auth setup-git && exec /usr/local/bin/rfs-ci' \
+        || echo "rfs-ci exited ($?), restarting in 30 s"
+      sleep 30
+    done
+  ) >> "$HOME/.sshd/ci.log" 2>&1 &
+elif [ "${DEVBOX_CI:-0}" = 1 ]; then
+  echo "DEVBOX_CI=1 but no CI_GH_TOKEN or GH_TOKEN; rfs-ci is not started" >> "$HOME/.sshd/ci.log"
 fi
 
 # Every hour: re-import the lane seed if main has moved, so new lanes start warm, and sweep: remove

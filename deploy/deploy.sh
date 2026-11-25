@@ -34,6 +34,9 @@ if [[ -z "${SSH_AUTHORIZED_KEYS:-}" ]]; then
   done
 fi
 export DEVBOX_SSH_PORT DEVBOX_MEM_LIMIT SSH_AUTHORIZED_KEYS
+# rfs-ci, the box's CI for the game repo's pull requests. Off unless DEVBOX_CI=1.
+export DEVBOX_CI="${DEVBOX_CI:-0}" CI_GH_TOKEN="${CI_GH_TOKEN:-}" \
+  TMD_CI_REPO="${TMD_CI_REPO:-derekhearst/TheMerrowDeep}" TMD_CI_AUTHORS="${TMD_CI_AUTHORS:-derekhearst}"
 
 # Render the compose file and wrap it as the JSON payload midclt wants, locally, so secrets never
 # touch a file on the NAS other than the app's own config.

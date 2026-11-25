@@ -4,6 +4,10 @@ Label a GitHub issue `agent` and a Claude Managed Agent works it on the TrueNAS 
 pull request. The agent loop runs on Anthropic's side and is billed to the Console API credits;
 the agent's tools (bash, files, git, Godot) run in a container on TrueNAS.
 
+It also tests the game's pull requests that cloud tasks (Claude Duet threads) push: they write
+the code, and the box runs the tests in the same slots and memory cap as everything else on it
+(see [Box CI for cloud tasks](#box-ci-for-cloud-tasks-rfs-ci)).
+
 ## How it works
 
 ```
@@ -51,6 +55,8 @@ add `agent` again to retry.
 | `worker/` | Dockerfile, compose file and entrypoints for the TrueNAS worker and the SSH dev box |
 | `deploy/` | Script and compose template that install the worker as a TrueNAS custom app |
 | `worker/dispatch.py` | The dispatcher (runs in its own container from the same image) |
+| `worker/ci.py` | rfs-ci: the dev box tests the game's pull requests from cloud tasks (in the devbox container) |
+| `docs/cloud-tasks.md` | How cloud tasks work with the box: no LFS downloads, `Box-Test:` trailers, reading the checks |
 | `github/` | The older Actions-based trigger, kept for reference |
 
 Already installed in `RigForSilent` (merged).
@@ -158,6 +164,50 @@ not `claude setup-token`) and `gh auth login`.
   first time, `tmux attach -t rc` to answer the folder trust prompt (detach with Ctrl-b d). Log in
   `~/.sshd/remote-control.log`; `DEVBOX_REMOTE_CONTROL=0` turns it off.
 
+## Box CI for cloud tasks (rfs-ci)
+
+Cloud tasks (Claude Duet threads, or any session without Godot) write the code and push a branch
+with a pull request to TheMerrowDeep. `rfs-ci` (worker/ci.py) runs in the dev box container and
+tests each push there, so it shares everything the box's own sessions use: the 48 GB cap, the
+`rfs-slot` queue (first come first served, beside Remote Control threads and the issue agent),
+`rfs-lane` worktrees seeded from the last import, and the disk sweep. Nothing reaches into the
+house network: it polls GitHub every 60 s (`TMD_CI_POLL`), outbound only, and uses no Actions minutes.
+
+```
+cloud task pushes claude/helm, opens PR #12
+  -> rfs-ci sees the new head, posts "box/landing: queued on the TrueNAS box" on the commit
+  -> lane ~/work/rfs-ci-pr-12 (rfs-lane new, or reset to the new push), LFS files from the box
+  -> rfs-slot tools/test.sh landing   (waits its turn; no GitHub token in the run)
+  -> commit status success / failure / error, and one PR comment with the end of the log
+PR closes -> rfs-lane done ci-pr-12 --force (unpushed or uncommitted work is still kept)
+```
+
+- **What runs:** the head commit's `Box-Test:` trailer picks it. None: `tools/test.sh landing` as
+  the `box/landing` check. `Box-Test: lobby` (a suite folder, a test name, `tools`, `assets`): that
+  suite as `box/test`. `Box-Test: none`: nothing. Only the newest push of a PR is tested; an older
+  head still queued is marked superseded. One run at a time.
+- **Whose:** PRs by `TMD_CI_AUTHORS` (derekhearst, the account cloud tasks push as) from branches
+  in the repo itself. Anyone else's needs the `box: test` label (triage access); forks never run;
+  `box: skip` turns a PR off. A branch a box session has checked out in its own lane is left to it.
+- **The token** (`CI_GH_TOKEN`, else the worker's `GH_TOKEN`) needs **Commit statuses RW** and
+  Pull requests RW on the game repo. It reaches only rfs-ci's own gh and git calls; the test runs
+  get none. Note what this does run: PR code, unattended, as the `agent` user, which can read
+  the dev box's home (the Claude and gh logins). That is why forks and other authors need the label.
+- **Logs:** `~/.sshd/ci.log` (what it picked and why), `~/work/runlogs/ci/pr-N-SHA-SUITE.log` (each
+  run). `rfs-ci --dry-run` lists what it would run and posts nothing.
+- **How cloud tasks work with it:** [docs/cloud-tasks.md](docs/cloud-tasks.md), meant for
+  TheMerrowDeep's `docs/AGENT_WORK.md`.
+
+### Turning it on
+
+1. Give the token **Commit statuses: Read and write** (GitHub > Settings > Developer settings >
+   Fine-grained tokens > the agent token > Repository permissions), with TheMerrowDeep in its
+   repositories. Or make a separate token for CI only and put it in `CI_GH_TOKEN`.
+2. Optional, before turning it on: `ssh -p 2222 -i ~/.ssh/truenas_ed25519 agent@192.168.0.2 rfs-ci --dry-run`
+   (uses the dev box's own `gh` login, posts nothing) to see which PRs it would run.
+3. In `deploy/.env`: `DEVBOX_CI=1` (and `CI_GH_TOKEN=` if you made one), then `deploy/deploy.sh`.
+4. Watch it: `ssh -p 2222 -i ~/.ssh/truenas_ed25519 agent@192.168.0.2 tail -f ~/.sshd/ci.log`.
+
 ## Usage dashboard
 
 Both halves report to the Claude usage dashboard ([claude-stats](https://github.com/derekhearst/claude-stats))
@@ -187,7 +237,9 @@ as their own sources:
 ## Tests
 
 `cd worker && AGENT_ID=a ENVIRONMENT_ID=e python test_dispatch.py` checks the supervision rules
-and the usage snapshot.
+and the usage snapshot. `python3 worker/test_ci.py` checks rfs-ci's rules (what runs, statuses,
+superseded heads, the token kept out of runs, the timeout); `bash worker/test_ci_lane.sh` runs its
+lanes end to end with the real rfs-lane and rfs-slot.
 
 ## Not verified yet
 
