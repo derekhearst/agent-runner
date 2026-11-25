@@ -20,6 +20,12 @@ services:
       GH_TOKEN: "${GH_TOKEN}"
       GIT_NAME: "${GIT_NAME}"
       GIT_EMAIL: "${GIT_EMAIL}"
+      # rfs-ci: the box tests the game repo's pull requests (off unless DEVBOX_CI=1). CI_GH_TOKEN
+      # is handed to it alone and dropped before sshd starts, like the worker's token.
+      DEVBOX_CI: "${DEVBOX_CI}"
+      CI_GH_TOKEN: "${CI_GH_TOKEN}"
+      TMD_CI_REPO: "${TMD_CI_REPO}"
+      TMD_CI_AUTHORS: "${TMD_CI_AUTHORS}"
       NVIDIA_VISIBLE_DEVICES: all
       NVIDIA_DRIVER_CAPABILITIES: compute,utility,video,graphics
     ports:

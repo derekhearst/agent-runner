@@ -52,6 +52,8 @@ COPY --chmod=0755 devbox-entrypoint.sh /usr/local/bin/devbox-entrypoint.sh
 COPY --chmod=0755 rfs-slot.sh /usr/local/bin/rfs-slot
 # One worktree per lane, made cheap and removed once landed (see the script).
 COPY --chmod=0755 rfs-lane.sh /usr/local/bin/rfs-lane
+# The box's CI for pull requests that cloud tasks push (see the script; off unless DEVBOX_CI=1).
+COPY --chmod=0755 ci.py /usr/local/bin/rfs-ci
 
 USER agent
 WORKDIR /home/agent/work
