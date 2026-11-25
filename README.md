@@ -90,6 +90,9 @@ into RigForSilent (PR 141).
    deploy/deploy.sh                     # creates or updates the `agent-runner` app over SSH
    deploy/deploy.sh restart             # after a new image is published
    ```
+   On Windows, run `pwsh deploy/deploy.ps1` (or `deploy.ps1 restart`) instead. It does the same
+   job with Windows' own `ssh`, so a key held in an SSH agent such as Bitwarden works; Git Bash's
+   `ssh` can't reach that agent. `deploy.ps1 -DryRun` only renders the compose file.
    Logs are in the TrueNAS UI: Apps > agent-runner > Logs. `worker/compose.yaml` is the same
    container for a machine where docker works (`docker compose up -d --build`).
 6. **Repo variables (only for the Actions trigger)** (Settings > Secrets and variables > Actions > Variables) in each repo:
