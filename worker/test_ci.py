@@ -3,6 +3,7 @@ import json
 import os
 import stat
 import tempfile
+import time
 
 os.environ["TMD_CI_REPO"] = "derekhearst/TheMerrowDeep"
 os.environ["TMD_CI_AUTHORS"] = "derekhearst"
@@ -213,5 +214,19 @@ with tempfile.TemporaryDirectory() as tmp:
 			check("scaled to review size", (shot.format, shot.width), ("JPEG", ci.SHOT_WIDTH))
 	except ImportError:
 		pass
+
+# --- clear_stale_locks(): a killed run's git locks don't block the next checkout ---
+with tempfile.TemporaryDirectory() as tmp:
+	repo = os.path.join(tmp, "lane")
+	subprocess.run(["git", "init", "-q", repo], check=True)
+	gitdir = os.path.join(repo, ".git")
+	old_lock, new_lock = os.path.join(gitdir, "index.lock"), os.path.join(gitdir, "HEAD.lock")
+	open(old_lock, "w").close()
+	open(new_lock, "w").close()
+	past = time.time() - ci.STALE_LOCK_S - 60
+	os.utime(old_lock, (past, past))
+	check("an old lock goes", ci.clear_stale_locks(repo), [old_lock])
+	check("a fresh lock stays", os.path.exists(new_lock), True)
+	check("not a repo: nothing", ci.clear_stale_locks(os.path.join(tmp, "nope")), [])
 
 print("all ok")

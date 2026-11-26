@@ -311,12 +311,38 @@ def branches_in_use() -> dict[str, str]:
 	return found
 
 
+STALE_LOCK_S = 120
+
+
+def clear_stale_locks(lane: str) -> list[str]:
+	"""Remove git lock files a killed run left in the lane's git dir (a timed-out suite, or the
+	worker's restart, can stop git mid-write). rfs-ci is the only thing that uses its lanes and runs
+	one job at a time, so a lock older than STALE_LOCK_S is no one's. Returns what it removed."""
+	try:
+		gitdir = git("rev-parse", "--absolute-git-dir", cwd=lane).strip()
+	except RuntimeError:
+		return []
+	removed = []
+	for name in ("index.lock", "HEAD.lock", "shallow.lock"):
+		path = os.path.join(gitdir, name)
+		try:
+			age = time.time() - os.path.getmtime(path)
+		except OSError:
+			continue
+		if age > STALE_LOCK_S:
+			os.remove(path)
+			removed.append(path)
+			log(f"removed a stale git lock ({age / 60:.0f} min old): {path}")
+	return removed
+
+
 def prepare_lane(job: Job) -> str:
 	"""The lane at the job's head, or "" when the branch has moved on (a newer push supersedes it)."""
 	lane = lane_dir(job.number)
 	if not os.path.isdir(lane):
 		subprocess.run(["rfs-lane", "new", f"ci-pr-{job.number}", "--branch", job.branch], check=True,
 			env={**os.environ, "TMD_MAIN_CHECKOUT": MAIN})
+	clear_stale_locks(lane)
 	git("fetch", "-q", "origin", job.branch, cwd=lane)
 	if git("rev-parse", f"origin/{job.branch}", cwd=lane).strip() != job.sha:
 		return ""
